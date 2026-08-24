@@ -4,19 +4,19 @@ import "testing"
 
 func TestValidateRadioIdentityNormalizesCallsign(t *testing.T) {
 	result := ValidateRadioIdentity(RadioIdentityInput{
-		Callsign: "  kj6ywd  ",
-		DMRID:    3196104,
+		Callsign: "  n0call  ",
+		DMRID:    1234567,
 		ESSID:    1,
 	})
 
 	if !result.Valid {
 		t.Fatalf("expected valid identity, got errors: %+v", result.Errors)
 	}
-	if result.Normalized.Callsign != "KJ6YWD" {
-		t.Fatalf("expected normalized callsign KJ6YWD, got %q", result.Normalized.Callsign)
+	if result.Normalized.Callsign != "N0CALL" {
+		t.Fatalf("expected normalized callsign N0CALL, got %q", result.Normalized.Callsign)
 	}
-	if result.Normalized.DMRID != 3196104 {
-		t.Fatalf("expected DMR ID 3196104, got %d", result.Normalized.DMRID)
+	if result.Normalized.DMRID != 1234567 {
+		t.Fatalf("expected DMR ID 1234567, got %d", result.Normalized.DMRID)
 	}
 	if result.Normalized.ESSID != 1 {
 		t.Fatalf("expected ESSID 1, got %d", result.Normalized.ESSID)
@@ -54,8 +54,8 @@ func TestValidateRadioIdentityRequiresLettersAndDigitsInCallsign(t *testing.T) {
 func TestValidateRadioIdentityAcceptsESSIDBounds(t *testing.T) {
 	for _, essid := range []int{0, 99} {
 		result := ValidateRadioIdentity(RadioIdentityInput{
-			Callsign: "KJ6YWD",
-			DMRID:    3196104,
+			Callsign: "N0CALL",
+			DMRID:    1234567,
 			ESSID:    essid,
 		})
 		if !result.Valid {
