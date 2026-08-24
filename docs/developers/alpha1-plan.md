@@ -77,7 +77,7 @@ Before DMR/network work grows, exercise the `dev` appliance workflow on real Lin
 
 1. [x] fresh install on the default port 8989;
 2. [x] occupied-port behavior for preserved configuration;
-3. [ ] service restart and boot behavior — deferred to a Raspberry Pi 5 running a fresh OS image rather than rebooting the existing Ubuntu test host;
+3. [ ] service restart and boot behavior — fresh Raspberry Pi 5 install passed; restart/reboot persistence still to be exercised on that host;
 4. [x] branded WebUI and versioned documentation delivery;
 5. [x] UFW-active LAN install with an installer-created managed rule;
 6. [x] UFW-active LAN install with an equivalent pre-existing rule that remains user-owned;
@@ -107,11 +107,11 @@ On an Ubuntu host with active UFW and existing ham-radio/network services, YWD-D
 - refused installation when the preserved configured port `8989` was occupied by an unrelated process, exited with status 1, left the foreign listener running, created no YWD-DMR service, and created no firewall rule;
 - deliberately moved the frontend from preserved port `8989` to `8990` using `--port 8990 --lan-test`, created the corresponding managed UFW rule, passed verification, then reinstalled without `--port` and correctly preserved `0.0.0.0:8990` plus the existing managed `8990/tcp` rule.
 
+On a Raspberry Pi 5 running a freshly installed OS, YWD-DMR setup and installation completed as expected from a clean machine. This confirms the development appliance installer is working on a fresh ARM64 host and is not dependent on state accumulated on the earlier Ubuntu test machine. Restart and real reboot persistence remain to be tested on this Pi 5.
+
 The installer-created-rule test exposed a UFW compatibility bug: the first implementation incorrectly used `--force` with a full `allow`/`delete allow` rule specification. The daemon remained healthy and verification correctly reported the firewall setup failure. The UFW commands were corrected to use normal full-rule syntax without `--force`, then the managed-rule installation and cleanup paths passed on the real host.
 
 A later test used `command -v ywd-dmr` immediately after uninstall and reported a possible remaining CLI. Because Bash can retain the old command path in its per-shell hash table even after `/usr/local/bin/ywd-dmr` is deleted, post-uninstall verification now checks the physical path directly and documents `hash -r` for clearing the interactive shell cache. The physical-path check and authoritative uninstall verifier both passed.
-
-Boot persistence will be tested on a Raspberry Pi 5 with a freshly installed OS. That is preferable to rebooting the existing Ubuntu test host because it also exercises YWD-DMR on a clean ARM64 machine without relying on state accumulated during earlier development tests.
 
 Remaining appliance tests are Pi 5 restart/boot persistence, full purge with safety backup, a clean reinstall after purge, and the fresh-install free-port suggestion path after purge.
 
