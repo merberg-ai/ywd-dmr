@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # YWD-DMR safe uninstaller
 #
-# Removes only YWD-DMR-owned paths. Shared OS packages and unrelated services
-# are never removed or reconfigured.
+# Removes only YWD-DMR-owned paths/rules. Shared OS packages, unrelated firewall
+# rules, and unrelated services are never removed or reconfigured.
 
 set -u
 
@@ -20,6 +20,7 @@ UNIT_FILE="/etc/systemd/system/ywd-dmrd.service"
 UNIT_DROPIN_DIR="/etc/systemd/system/ywd-dmrd.service.d"
 CLI_FILE="/usr/local/bin/ywd-dmr"
 UNINSTALL_FILE="/usr/local/sbin/ywd-dmr-uninstall"
+FIREWALL_META_FILE="${CONFIG_DIR}/firewall.conf"
 OWNED_USER_MARKER="${CONFIG_DIR}/install-owned-user"
 OWNED_USER="ywd-dmr"
 
@@ -34,6 +35,7 @@ Usage:
 
 Default behavior removes the YWD-DMR application/service but preserves user
 configuration, local vocoder plugins, history, and backups for reinstall.
+Installer-owned firewall rules are removed in both normal and full removal.
 
 Options:
   --purge-data   Also remove YWD-DMR configuration, data, plugins, logs, and
@@ -61,6 +63,14 @@ run() {
   "$@"
 }
 
+meta_value() {
+  local key="$1" file="$2" value
+  [ -f "$file" ] || return 1
+  value="$(sed -n "s/^${key}=//p" "$file" 2>/dev/null | tail -1)"
+  [ -n "$value" ] || return 1
+  printf '%s\n' "$value"
+}
+
 remove_tree() {
   case "$1" in
     "$APP_DIR"|"$CONFIG_DIR"|"$DATA_DIR"|"$LOG_DIR"|"$BACKUP_DIR"|"$UNIT_DROPIN_DIR") ;;
@@ -73,12 +83,61 @@ remove_tree() {
 
 remove_file() {
   case "$1" in
-    "$UNIT_FILE"|"$CLI_FILE"|"$UNINSTALL_FILE") ;;
+    "$UNIT_FILE"|"$CLI_FILE"|"$UNINSTALL_FILE"|"$FIREWALL_META_FILE") ;;
     *) warn "Refusing to remove unexpected file: $1"; return 1 ;;
   esac
   [ -e "$1" ] || [ -L "$1" ] || return 0
   log "Removing $1"
   run rm -f -- "$1"
+}
+
+ufw_managed_rule_present() {
+  local source="$1" port="$2" comment="$3"
+  command -v ufw >/dev/null 2>&1 || return 1
+  LC_ALL=C ufw show added 2>/dev/null \
+    | grep -F "$source" \
+    | grep -F "port $port" \
+    | grep -F "$comment" >/dev/null 2>&1
+}
+
+remove_firewall_integration() {
+  [ -f "$FIREWALL_META_FILE" ] || return 0
+
+  local provider managed source port comment
+  provider="$(meta_value YWD_DMR_FIREWALL_PROVIDER "$FIREWALL_META_FILE" 2>/dev/null || true)"
+  managed="$(meta_value YWD_DMR_FIREWALL_MANAGED "$FIREWALL_META_FILE" 2>/dev/null || true)"
+  source="$(meta_value YWD_DMR_FIREWALL_SOURCE "$FIREWALL_META_FILE" 2>/dev/null || true)"
+  port="$(meta_value YWD_DMR_FIREWALL_PORT "$FIREWALL_META_FILE" 2>/dev/null || true)"
+  comment="$(meta_value YWD_DMR_FIREWALL_COMMENT "$FIREWALL_META_FILE" 2>/dev/null || true)"
+
+  if [ "$managed" = 1 ]; then
+    if [ "$provider" != ufw ]; then
+      warn "Firewall metadata says YWD-DMR owns a '$provider' rule, but this uninstaller only knows how to safely remove UFW rules."
+      return 1
+    fi
+    if ! command -v ufw >/dev/null 2>&1; then
+      warn "UFW is unavailable; the installer-owned firewall rule could not be removed."
+      return 1
+    fi
+    if [ -z "$source" ] || [ -z "$port" ] || [ -z "$comment" ]; then
+      warn "Firewall ownership metadata is incomplete. Refusing to guess which rule to remove."
+      return 1
+    fi
+
+    if ufw_managed_rule_present "$source" "$port" "$comment"; then
+      log "Removing YWD-DMR-managed UFW rule: $source -> $port/tcp"
+      if ! run ufw --force delete allow from "$source" to any port "$port" proto tcp comment "$comment" >/dev/null; then
+        warn "Could not remove the YWD-DMR-managed UFW rule. It was left in place."
+        return 1
+      fi
+    else
+      log "YWD-DMR-managed UFW rule is no longer present; no firewall deletion is needed."
+    fi
+  else
+    log "Existing firewall rule was not created by YWD-DMR; leaving it untouched."
+  fi
+
+  remove_file "$FIREWALL_META_FILE"
 }
 
 while [ "$#" -gt 0 ]; do
@@ -107,6 +166,11 @@ if [ -f "$OWNED_USER_MARKER" ] && grep -qx 'created-by-ywd-dmr-installer-v1' "$O
   OWNED_USER_WAS_CREATED=1
 fi
 
+FW_PROVIDER="$(meta_value YWD_DMR_FIREWALL_PROVIDER "$FIREWALL_META_FILE" 2>/dev/null || true)"
+FW_MANAGED="$(meta_value YWD_DMR_FIREWALL_MANAGED "$FIREWALL_META_FILE" 2>/dev/null || true)"
+FW_SOURCE="$(meta_value YWD_DMR_FIREWALL_SOURCE "$FIREWALL_META_FILE" 2>/dev/null || true)"
+FW_PORT="$(meta_value YWD_DMR_FIREWALL_PORT "$FIREWALL_META_FILE" 2>/dev/null || true)"
+
 cat <<EOF
 
 YWD-DMR Safe Uninstaller
@@ -118,6 +182,14 @@ Logs:          $LOG_DIR
 Backups:       $BACKUP_DIR
 
 EOF
+
+if [ "$FW_MANAGED" = 1 ]; then
+  log "Firewall:      YWD-DMR-managed ${FW_PROVIDER:-firewall} rule ${FW_SOURCE:-unknown} -> ${FW_PORT:-unknown}/tcp will be removed."
+elif [ -f "$FIREWALL_META_FILE" ]; then
+  log "Firewall:      existing/user-owned rule will be left untouched."
+else
+  log "Firewall:      no installer-owned firewall rule recorded."
+fi
 
 if [ "$PURGE_DATA" -eq 1 ]; then
   warn "FULL REMOVAL selected. Configuration, local plugins, history, logs, and YWD-DMR-managed backups will be removed."
@@ -142,6 +214,11 @@ log "Stopping YWD-DMR service if present..."
 if command -v systemctl >/dev/null 2>&1; then
   run systemctl disable --now ywd-dmrd.service >/dev/null 2>&1 || true
 fi
+
+# Firewall rules are operational integration, not user station data. Remove an
+# installer-owned rule even during software-only removal. Never remove an
+# equivalent rule that existed before YWD-DMR or was created by the user.
+remove_firewall_integration || warn "Firewall cleanup was incomplete; review the warning above."
 
 SAFETY_BACKUP=""
 if [ "$PURGE_DATA" -eq 1 ] && [ "$NO_BACKUP" -ne 1 ]; then
@@ -217,4 +294,4 @@ if [ "$PURGE_DATA" -eq 1 ]; then
 else
   log "Your YWD-DMR configuration/data and service account were preserved for a future reinstall."
 fi
-log "Shared Linux packages and unrelated services were intentionally left untouched."
+log "Shared Linux packages, unrelated firewall rules, and unrelated services were intentionally left untouched."
