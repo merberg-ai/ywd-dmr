@@ -10,6 +10,7 @@ The first on-air milestone is successful when a user can install YWD-DMR, finish
 - [x] Responsive WebUI scaffold
 - [x] Pi Zero/ARMv6 CI build target
 - [x] Safe uninstall scaffold and installation-ownership rules
+- [x] Default frontend port 8989 and reusable port preflight helper
 - [ ] Authentication and one-time first-run claim
 - [ ] Admin / Operator / Observer authorization model
 - [ ] Structured logging and support bundle
@@ -49,6 +50,7 @@ The first on-air milestone is successful when a user can install YWD-DMR, finish
 ## Appliance workflow
 
 - [ ] One-command installer
+- [ ] Installer port-conflict detection, free-port suggestion, and configurable bind/listen settings
 - [ ] Guided WebUI first-run wizard
 - [ ] mDNS `ywd-dmr.local`
 - [ ] systemd unit and maintenance CLI
