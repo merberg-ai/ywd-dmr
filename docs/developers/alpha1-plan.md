@@ -83,7 +83,7 @@ Before DMR/network work grows, exercise the `dev` appliance workflow on real Lin
 6. [x] UFW-active LAN install with an equivalent pre-existing rule that remains user-owned;
 7. [x] normal uninstall while preserving configuration/data;
 8. [x] reinstall using preserved configuration;
-9. [ ] full purge with safety backup;
+9. [ ] full purge with safety backup — purge completed on the Pi 5 and created the final safety archive; post-purge verification is still required;
 10. [ ] clean reinstall after purge.
 
 ### Real-machine results so far
@@ -109,10 +109,12 @@ On an Ubuntu host with active UFW and existing ham-radio/network services, YWD-D
 
 On a Raspberry Pi 5 running a freshly installed ARM64 OS, YWD-DMR setup and installation completed as expected from a clean machine. After a real reboot, `ywd-dmrd.service` returned enabled and active, the listener remained `0.0.0.0:8989`, the health API responded, and the full installed-appliance verifier passed. This confirms both fresh ARM64 installation and systemd boot persistence without relying on state accumulated on the earlier Ubuntu test machine. The Pi 5 did not have YWD-DMR firewall metadata for this test, so verification correctly treated firewall integration as informational rather than a failure.
 
+The same Pi 5 then completed a full `--purge-data` uninstall and retained the final protected safety archive at `/var/backups/ywd-dmr-uninstall-20260824-144546.tar.gz`. The purge command completed without reporting damage to shared packages, unrelated firewall rules, or unrelated services. The purge remains pending until `scripts/verify-uninstall.sh --purge-data` confirms that all YWD-DMR-owned persistent state and the installer-created service account are gone while the external safety archive remains readable.
+
 The installer-created-rule test exposed a UFW compatibility bug: the first implementation incorrectly used `--force` with a full `allow`/`delete allow` rule specification. The daemon remained healthy and verification correctly reported the firewall setup failure. The UFW commands were corrected to use normal full-rule syntax without `--force`, then the managed-rule installation and cleanup paths passed on the real host.
 
 A later test used `command -v ywd-dmr` immediately after uninstall and reported a possible remaining CLI. Because Bash can retain the old command path in its per-shell hash table even after `/usr/local/bin/ywd-dmr` is deleted, post-uninstall verification now checks the physical path directly and documents `hash -r` for clearing the interactive shell cache. The physical-path check and authoritative uninstall verifier both passed.
 
-Remaining appliance tests are full purge with safety backup, a clean reinstall after purge, and the fresh-install free-port suggestion path after purge.
+Remaining appliance tests are post-purge verification on the Pi 5, a clean reinstall after purge, and the fresh-install free-port suggestion path after purge.
 
 Problems found here should be fixed before promoting this installer foundation to `main`.
