@@ -97,6 +97,8 @@ On an Ubuntu host with active UFW and existing ham-radio/network services, YWD-D
 - used that rule without claiming ownership or changing it;
 - reported firewall ownership correctly through verification and diagnostics.
 
-The remaining firewall test is the inverse path: remove the manually created test rule, let YWD-DMR create its own tagged LAN rule, then confirm normal uninstall removes only that installer-owned rule.
+The installer-created-rule test exposed a UFW compatibility bug: the first implementation incorrectly used `--force` with a full `allow`/`delete allow` rule specification. The daemon remained healthy and verification correctly reported the firewall setup failure. The UFW commands were corrected to use normal full-rule syntax without `--force`.
+
+The remaining firewall test is the inverse path: let YWD-DMR create its own tagged LAN rule successfully, then confirm normal uninstall removes only that installer-owned rule.
 
 Problems found here should be fixed before promoting this installer foundation to `main`.

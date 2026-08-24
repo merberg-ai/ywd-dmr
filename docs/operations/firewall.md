@@ -43,7 +43,7 @@ If UFW is installed and active, the installer:
 A typical installer-created rule is equivalent to:
 
 ```bash
-ufw allow from 192.168.1.0/24 to any port 8989 proto tcp comment 'YWD-DMR managed LAN'
+ufw allow proto tcp from 192.168.1.0/24 to any port 8989 comment 'YWD-DMR managed LAN'
 ```
 
 The source is the local subnet, **not `Anywhere`**. YWD-DMR must not automatically create a broad public rule for its frontend.

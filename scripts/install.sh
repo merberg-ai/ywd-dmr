@@ -164,7 +164,7 @@ delete_managed_ufw_rule() {
     return 0
   fi
   log "Removing old YWD-DMR-managed UFW rule: $source -> $port/tcp"
-  if ufw --force delete allow proto tcp from "$source" to any port "$port" comment "$comment" >/dev/null; then
+  if ufw delete allow proto tcp from "$source" to any port "$port" comment "$comment" >/dev/null; then
     return 0
   fi
   warn "Could not remove the old YWD-DMR-managed UFW rule. It was left in place."
@@ -432,7 +432,7 @@ rm -f -- "$OLD_ENV_TMP" "$OLD_RUNTIME_TMP" 2>/dev/null || true
 # Existing equivalent rules are never claimed as YWD-DMR-owned.
 FIREWALL_RESULT="$FIREWALL_SUMMARY"
 if [ "$FIREWALL_PLAN" = create-managed ]; then
-  if ufw --force allow proto tcp from "$FIREWALL_SOURCE" to any port "$PORT" comment "$FIREWALL_COMMENT" >/dev/null; then
+  if ufw allow proto tcp from "$FIREWALL_SOURCE" to any port "$PORT" comment "$FIREWALL_COMMENT" >/dev/null; then
     log "Added UFW rule for YWD-DMR LAN access: $FIREWALL_SOURCE -> $PORT/tcp"
     if [ "$OLD_FW_PROVIDER" = ufw ] && [ "$OLD_FW_MANAGED" = 1 ] \
        && { [ "$OLD_FW_SOURCE" != "$FIREWALL_SOURCE" ] || [ "$OLD_FW_PORT" != "$PORT" ]; }; then
