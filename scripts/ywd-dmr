@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -u
 
-PUBLIC_RUNTIME_FILE=/etc/ywd-dmr/runtime.conf
-ENV_FILE=/etc/ywd-dmr/ywd-dmr.env
-SERVICE=ywd-dmrd.service
+PUBLIC_RUNTIME_FILE="${YWD_DMR_PUBLIC_RUNTIME_FILE:-/etc/ywd-dmr/runtime.conf}"
+ENV_FILE="${YWD_DMR_ENV_FILE:-/etc/ywd-dmr/ywd-dmr.env}"
+SERVICE="${YWD_DMR_SERVICE:-ywd-dmrd.service}"
 
 usage() {
   cat <<'EOF'
