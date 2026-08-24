@@ -19,7 +19,7 @@ The first on-air milestone is successful when a user can install YWD-DMR, finish
 - [x] Radio identity model and non-mutating setup validation API
 - [x] Known-good configuration schema, atomic persistence, and rollback/recovery core
 - [x] Daemon-owned read-only setup status
-- [ ] Authentication and one-time first-run claim
+- [ ] Authentication and one-time first-run claim — one-time claim implementation is on `dev`; real-machine claim validation and normal password login remain
 - [ ] Admin / Operator / Observer authorization model
 - [ ] Structured logging and support bundle
 - [ ] SQLite event/history persistence where relational storage is justified
@@ -122,18 +122,21 @@ Current progress:
 - [x] Radio identity input and normalized model.
 - [x] Callsign, base DMR ID, and ESSID validation.
 - [x] `POST /api/v1/setup/identity/validate` as a non-mutating API.
-- [x] Unit/API coverage for normalization, invalid fields, JSON contract, and method restrictions.
-- [x] Installed Pi 5 exercise of valid/invalid identity requests, strict JSON handling, and POST-only method enforcement.
-- [x] Durable known-good configuration file-store implementation.
-- [x] Schema/revision envelope, atomic writes, one previous rollback snapshot, invalid-candidate protection, and recovery tests.
+- [x] Installed Pi 5 exercise of identity validation and strict HTTP/JSON behavior.
+- [x] Durable known-good configuration file-store implementation with schema/revision, atomic writes, rollback snapshot, invalid-candidate protection, and recovery tests.
 - [x] Config-store unit suite, full Go suite, vet, and build passed on Pi 5 at the `2a889bb` checkpoint.
 - [x] Daemon startup loads known-good configuration and records missing/loaded/recovered/error state.
 - [x] Read-only `GET /api/v1/setup/status` with method/API tests.
-- [ ] Pi 5 installed-runtime exercise of missing/loaded/recovered setup status.
-- [ ] One-time installation claim.
-- [ ] Administrator authentication/session handling.
+- [x] Pi 5 installed-runtime exercise of missing -> loaded -> recovered -> missing setup status, including the expected recovery journal warning and final healthy daemon.
+- [x] One-time high-entropy claim-code generation in restricted persistent state.
+- [x] Local `sudo ywd-dmr claim-code` retrieval path.
+- [x] First-admin password verifier format using standard-library PBKDF2-HMAC-SHA256 with random salt and stored iteration count.
+- [x] `POST /api/v1/setup/claim` with one-time semantics and opaque HttpOnly `SameSite=Strict` session cookie.
+- [x] `GET /api/v1/auth/session` current-session inspection.
+- [ ] Pi 5 installed-appliance exercise of wrong-code rejection, successful claim, claim-code deletion, one-time reuse rejection, claimed restart persistence, and memory-only session invalidation on restart.
+- [ ] Administrator password login after restart, throttling, and logout.
 - [ ] Observer / Operator / Admin server-side authorization.
 - [ ] Protected configuration validate/test/commit workflow.
 - [ ] Guided WebUI first-run wizard.
 
-The current LAN test dashboard remains unauthenticated. Until claim/authentication is implemented, do not router-forward or publicly expose it. The identity-validation endpoint is intentionally allowed before authentication only because it stores nothing, reveals no protected data, and controls no radio/network state. The setup-status endpoint is also read-only and exposes only coarse configuration health metadata; it does not return the stored identity or secrets. The configuration file store is still not reachable through a mutating HTTP endpoint.
+The current LAN test dashboard remains development-only. Do not router-forward or publicly expose it. The one-time claim endpoint is the only unauthenticated mutation and requires the locally retrieved high-entropy bootstrap code; configuration commits, radio/network controls, and secret reads remain unavailable until normal login/authorization middleware exists.
