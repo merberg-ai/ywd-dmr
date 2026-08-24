@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # YWD-DMR safe uninstaller
 #
-# The production installer will expose this through the maintenance CLI and/or
-# install a copy as /usr/local/sbin/ywd-dmr-uninstall. This script deliberately
-# removes only YWD-DMR-owned paths. It never removes shared OS packages.
+# Removes only YWD-DMR-owned paths. Shared OS packages and unrelated services
+# are never removed or reconfigured.
 
 set -u
 
@@ -21,7 +20,7 @@ UNIT_FILE="/etc/systemd/system/ywd-dmrd.service"
 UNIT_DROPIN_DIR="/etc/systemd/system/ywd-dmrd.service.d"
 CLI_FILE="/usr/local/bin/ywd-dmr"
 UNINSTALL_FILE="/usr/local/sbin/ywd-dmr-uninstall"
-OWNED_USER_MARKER="${DATA_DIR}/install-owned-user"
+OWNED_USER_MARKER="${CONFIG_DIR}/install-owned-user"
 OWNED_USER="ywd-dmr"
 
 usage() {
@@ -29,10 +28,12 @@ usage() {
 YWD-DMR safe uninstaller
 
 Usage:
+  sudo ywd-dmr uninstall [options]
+  sudo /usr/local/sbin/ywd-dmr-uninstall [options]
   sudo bash scripts/uninstall.sh [options]
 
 Default behavior removes the YWD-DMR application/service but preserves user
-configuration, local vocoder plugins, history, and backups.
+configuration, local vocoder plugins, history, and backups for reinstall.
 
 Options:
   --purge-data   Also remove YWD-DMR configuration, data, plugins, logs, and
@@ -43,7 +44,7 @@ Options:
   -h, --help     Show this help.
 
 For a completely clean removal with no retained backup:
-  sudo bash scripts/uninstall.sh --purge-data --no-backup
+  sudo ywd-dmr uninstall --purge-data --no-backup
 EOF
 }
 
@@ -63,10 +64,7 @@ run() {
 remove_tree() {
   case "$1" in
     "$APP_DIR"|"$CONFIG_DIR"|"$DATA_DIR"|"$LOG_DIR"|"$BACKUP_DIR"|"$UNIT_DROPIN_DIR") ;;
-    *)
-      warn "Refusing to remove unexpected directory: $1"
-      return 1
-      ;;
+    *) warn "Refusing to remove unexpected directory: $1"; return 1 ;;
   esac
   [ -e "$1" ] || return 0
   log "Removing $1"
@@ -76,10 +74,7 @@ remove_tree() {
 remove_file() {
   case "$1" in
     "$UNIT_FILE"|"$CLI_FILE"|"$UNINSTALL_FILE") ;;
-    *)
-      warn "Refusing to remove unexpected file: $1"
-      return 1
-      ;;
+    *) warn "Refusing to remove unexpected file: $1"; return 1 ;;
   esac
   [ -e "$1" ] || [ -L "$1" ] || return 0
   log "Removing $1"
@@ -102,7 +97,6 @@ if [ "$NO_BACKUP" -eq 1 ] && [ "$PURGE_DATA" -ne 1 ]; then
   warn "--no-backup only makes sense with --purge-data."
   exit 2
 fi
-
 if [ "$(id -u)" -ne 0 ]; then
   warn "Please run this uninstaller with sudo/root privileges."
   exit 1
@@ -117,7 +111,7 @@ cat <<EOF
 
 YWD-DMR Safe Uninstaller
 ========================
-Application:  $APP_DIR
+Application:   $APP_DIR
 Configuration: $CONFIG_DIR
 Data/plugins:  $DATA_DIR
 Logs:          $LOG_DIR
@@ -130,10 +124,7 @@ if [ "$PURGE_DATA" -eq 1 ]; then
 else
   log "Software-only removal selected. Configuration, local plugins, history, and backups will be preserved."
 fi
-
-if [ "$DRY_RUN" -eq 1 ]; then
-  log "Dry-run mode: nothing will be deleted."
-fi
+[ "$DRY_RUN" -eq 1 ] && log "Dry-run mode: nothing will be deleted."
 
 if [ "$ASSUME_YES" -ne 1 ]; then
   if [ "$PURGE_DATA" -eq 1 ]; then
@@ -196,6 +187,9 @@ if command -v systemctl >/dev/null 2>&1; then
   run systemctl reset-failed ywd-dmrd.service >/dev/null 2>&1 || true
 fi
 
+# The service account is retained during software-only removal because preserved
+# data still belongs to it. On full purge, remove it only when the root-owned
+# installer marker proves YWD-DMR created it and its profile still looks safe.
 if [ "$PURGE_DATA" -eq 1 ] && [ "$OWNED_USER_WAS_CREATED" -eq 1 ] && command -v getent >/dev/null 2>&1; then
   if getent passwd "$OWNED_USER" >/dev/null 2>&1; then
     passwd_line="$(getent passwd "$OWNED_USER")"
@@ -206,18 +200,13 @@ if [ "$PURGE_DATA" -eq 1 ] && [ "$OWNED_USER_WAS_CREATED" -eq 1 ] && command -v 
         log "Removing installer-created service account: $OWNED_USER"
         run userdel "$OWNED_USER" >/dev/null 2>&1 || warn "Could not remove service account $OWNED_USER; it may still be in use."
         ;;
-      *)
-        warn "Service account $OWNED_USER does not match the installer-owned profile; leaving it untouched."
-        ;;
+      *) warn "Service account $OWNED_USER does not match the installer-owned profile; leaving it untouched." ;;
     esac
   fi
 fi
 
-cat <<EOF
-
-YWD-DMR uninstall finished.
-EOF
-
+log ""
+log "YWD-DMR uninstall finished."
 if [ "$PURGE_DATA" -eq 1 ]; then
   if [ -n "$SAFETY_BACKUP" ]; then
     log "Safety backup retained at: $SAFETY_BACKUP"
@@ -226,7 +215,6 @@ if [ "$PURGE_DATA" -eq 1 ]; then
     log "Full removal was performed without creating a safety backup."
   fi
 else
-  log "Your YWD-DMR configuration/data were preserved for a future reinstall."
+  log "Your YWD-DMR configuration/data and service account were preserved for a future reinstall."
 fi
-
-log "Shared Linux packages were intentionally left installed."
+log "Shared Linux packages and unrelated services were intentionally left untouched."
