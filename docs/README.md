@@ -17,6 +17,7 @@ The copy in this folder is the canonical documentation for the matching YWD-DMR 
 - [Architecture](developers/architecture.md)
 - [Alpha 1 plan](developers/alpha1-plan.md)
 - [Branching and releases](developers/branching-and-releases.md)
+- [Frontend branding and asset rules](developers/frontend-branding.md)
 - [Installation ownership and safe removal](developers/install-ownership.md)
 - [Control API v1](protocols/control-api-v1.md)
 - [Event API v1](protocols/event-api-v1.md)
@@ -25,4 +26,4 @@ The copy in this folder is the canonical documentation for the matching YWD-DMR 
 
 ## Documentation rule
 
-Documentation changes are mandatory when the matching behavior changes. This includes UI, configuration, APIs, installation, uninstall/removal, updates, recovery, network behavior, vocoders, troubleshooting, security, architecture, branching, and release workflow.
+Documentation changes are mandatory when the matching behavior changes. This includes UI, branding/assets, configuration, APIs, installation, uninstall/removal, updates, recovery, network behavior, vocoders, troubleshooting, security, architecture, branching, and release workflow.
