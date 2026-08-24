@@ -10,6 +10,7 @@ The copy in this folder is the canonical documentation for the matching YWD-DMR 
 - [First-run setup](getting-started/first-run.md)
 - [Troubleshooting: start here](troubleshooting/start-here.md)
 - [Updates and rollback](operations/updates.md)
+- [Listening port and port-conflict handling](operations/listening-ports.md)
 - [Safely uninstalling YWD-DMR](operations/uninstall.md)
 
 ## For developers and advanced users
@@ -26,4 +27,4 @@ The copy in this folder is the canonical documentation for the matching YWD-DMR 
 
 ## Documentation rule
 
-Documentation changes are mandatory when the matching behavior changes. This includes UI, branding/assets, configuration, APIs, installation, uninstall/removal, updates, recovery, network behavior, vocoders, troubleshooting, security, architecture, branching, and release workflow.
+Documentation changes are mandatory when the matching behavior changes. This includes UI, branding/assets, configuration, ports/listeners, APIs, installation, uninstall/removal, updates, recovery, network behavior, vocoders, troubleshooting, security, architecture, branching, and release workflow.
