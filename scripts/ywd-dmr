@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -u
 
+PUBLIC_RUNTIME_FILE=/etc/ywd-dmr/runtime.conf
 ENV_FILE=/etc/ywd-dmr/ywd-dmr.env
 SERVICE=ywd-dmrd.service
 
@@ -18,15 +19,26 @@ Usage:
 EOF
 }
 
+read_listen_from() {
+  local file="$1" value
+  [ -r "$file" ] || return 1
+  value="$(sed -n 's/^YWD_DMR_LISTEN=//p' "$file" 2>/dev/null | tail -1)"
+  [ -n "$value" ] || return 1
+  printf '%s\n' "$value"
+}
+
 listen_value() {
-  [ -f "$ENV_FILE" ] || return 1
-  sed -n 's/^YWD_DMR_LISTEN=//p' "$ENV_FILE" | tail -1
+  read_listen_from "$PUBLIC_RUNTIME_FILE" && return 0
+  read_listen_from "$ENV_FILE" && return 0
+  return 1
 }
 
 health_url() {
   local listen port
   listen="$(listen_value 2>/dev/null || printf '127.0.0.1:8989')"
+  [ -n "$listen" ] || listen='127.0.0.1:8989'
   port="${listen##*:}"
+  [ -n "$port" ] || port=8989
   printf 'http://127.0.0.1:%s/api/v1/health\n' "$port"
 }
 
@@ -43,6 +55,7 @@ case "${1:-}" in
     ;;
   url)
     listen="$(listen_value 2>/dev/null || printf '127.0.0.1:8989')"
+    [ -n "$listen" ] || listen='127.0.0.1:8989'
     host="${listen%:*}"
     port="${listen##*:}"
     if [ "$host" = 0.0.0.0 ]; then
@@ -52,9 +65,10 @@ case "${1:-}" in
     printf 'http://%s:%s/\n' "$host" "$port"
     ;;
   diagnose)
+    listen="$(listen_value 2>/dev/null || true)"
     echo "YWD-DMR basic diagnostics"
     echo "========================="
-    echo "Listener: $(listen_value 2>/dev/null || echo 'not configured')"
+    echo "Listener: ${listen:-not configured}"
     if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
       echo "Service:  active"
     else
