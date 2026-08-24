@@ -198,14 +198,17 @@ func (m *Manager) Claim(req ClaimRequest) (Session, error) {
 	if err := writeSecurityStateAtomic(m.securityPath(), state); err != nil {
 		return Session{}, fmt.Errorf("persist claimed security state: %w", err)
 	}
-	if err := os.Remove(m.ClaimCodePath()); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return Session{}, fmt.Errorf("remove used claim code: %w", err)
-	}
 
+	// The durable security document is authoritative from this point forward.
+	// Mark the process claimed before best-effort deletion of the plaintext
+	// bootstrap code so a cleanup failure can never report "unclaimed" after a
+	// successful durable claim. A leftover code is unusable and Initialize will
+	// try to remove it again on the next daemon start.
 	expires := now.Add(SessionLifetime)
 	m.sessions[tokenHash] = sessionRecord{Username: username, Role: "admin", Expires: expires}
 	m.claimed = true
 	m.admin = state.Admin
+	_ = os.Remove(m.ClaimCodePath())
 
 	return Session{
 		Token: token,
