@@ -18,6 +18,7 @@ The copy in this folder is the canonical documentation for the matching YWD-DMR 
 
 - [Architecture](developers/architecture.md)
 - [Alpha 1 plan](developers/alpha1-plan.md)
+- [Setup and security phase](developers/setup-security-phase.md)
 - [Branching and releases](developers/branching-and-releases.md)
 - [Licensing status](developers/licensing.md)
 - [Frontend branding and asset rules](developers/frontend-branding.md)
