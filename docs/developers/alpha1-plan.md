@@ -72,15 +72,31 @@ The first on-air milestone is successful when a user can install YWD-DMR, finish
 
 Before DMR/network work grows, exercise the `dev` appliance workflow on a real Linux host:
 
-1. fresh install on the default or selected port;
-2. occupied-port behavior;
-3. service start/restart/boot behavior;
-4. branded WebUI and versioned documentation delivery;
-5. UFW-active LAN install with an installer-created managed rule;
-6. UFW-active LAN install with an equivalent pre-existing rule that must remain user-owned;
-7. normal uninstall while preserving configuration/data and removing only installer-owned firewall integration;
-8. reinstall using preserved configuration;
-9. full purge with safety backup;
-10. clean reinstall after purge.
+1. [x] fresh install on the default port 8989;
+2. [ ] occupied-port behavior;
+3. [ ] service restart and boot behavior;
+4. [x] branded WebUI and versioned documentation delivery;
+5. [ ] UFW-active LAN install with an installer-created managed rule;
+6. [x] UFW-active LAN install with an equivalent pre-existing rule that remains user-owned;
+7. [x] normal uninstall while preserving configuration/data;
+8. [x] reinstall using preserved configuration;
+9. [ ] full purge with safety backup;
+10. [ ] clean reinstall after purge.
+
+### Real-machine results so far
+
+On an Ubuntu host with active UFW and existing ham-radio/network services, YWD-DMR has successfully:
+
+- installed on `0.0.0.0:8989` without disturbing other listeners;
+- started and remained healthy under systemd;
+- served the branded WebUI to another device on the LAN;
+- passed installed-appliance verification;
+- completed software-only uninstall while preserving persistent configuration/data;
+- reinstalled from the preserved state;
+- detected an existing `192.168.1.0/24 -> 8989/tcp` UFW rule as user-owned;
+- used that rule without claiming ownership or changing it;
+- reported firewall ownership correctly through verification and diagnostics.
+
+The remaining firewall test is the inverse path: remove the manually created test rule, let YWD-DMR create its own tagged LAN rule, then confirm normal uninstall removes only that installer-owned rule.
 
 Problems found here should be fixed before promoting this installer foundation to `main`.
