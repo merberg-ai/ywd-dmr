@@ -4,6 +4,7 @@ set -u
 PUBLIC_RUNTIME_FILE="${YWD_DMR_PUBLIC_RUNTIME_FILE:-/etc/ywd-dmr/runtime.conf}"
 ENV_FILE="${YWD_DMR_ENV_FILE:-/etc/ywd-dmr/ywd-dmr.env}"
 FIREWALL_META_FILE="${YWD_DMR_FIREWALL_META_FILE:-/etc/ywd-dmr/firewall.conf}"
+CLAIM_CODE_FILE="${YWD_DMR_CLAIM_CODE_FILE:-/var/lib/ywd-dmr/claim-code}"
 SERVICE="${YWD_DMR_SERVICE:-ywd-dmrd.service}"
 
 usage() {
@@ -15,6 +16,7 @@ Usage:
   ywd-dmr diagnose
   ywd-dmr logs
   ywd-dmr url
+  sudo ywd-dmr claim-code
   sudo ywd-dmr start|stop|restart
   sudo ywd-dmr uninstall [uninstaller options]
 EOF
@@ -85,6 +87,13 @@ case "${1:-}" in
       [ -n "$ip" ] && host="$ip"
     fi
     printf 'http://%s:%s/\n' "$host" "$port"
+    ;;
+  claim-code)
+    if [ ! -r "$CLAIM_CODE_FILE" ]; then
+      echo "Claim code is unavailable. The installation may already be claimed, or this command needs sudo." >&2
+      exit 1
+    fi
+    cat "$CLAIM_CODE_FILE"
     ;;
   diagnose)
     listen="$(listen_value 2>/dev/null || true)"
