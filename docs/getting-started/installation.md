@@ -153,6 +153,10 @@ Re-running the development installer is allowed. Existing YWD-DMR configuration 
 
 The installer builds/tests first and stops the currently installed YWD-DMR service only when the replacement payload is ready. If the replacement fails its health check and a previous release exists, the installer attempts to restore the previous release and both its protected and public runtime configuration.
 
+The development installer itself runs under `sudo`, so its source build also runs with root privileges. `scripts/build.sh` therefore repairs the generated checkout `dist` directory and `dist/ywd-dmrd` ownership back to the original sudo user when it exits. This prevents an install from making the next normal-user developer build fail with `permission denied`. `scripts/build.sh` also accepts `YWD_DMR_BUILD_OUTPUT=/path/to/output` for callers that need a different generated-binary location.
+
+Older `dev` builds from before this ownership fix may already have left `dist` or `dist/ywd-dmrd` owned by root. That is only a generated build artifact; remove or correct that old artifact once before retesting the current build.
+
 Firewall changes occur only after the new daemon passes its health check. If the selected port or LAN changes, an installer-owned UFW rule may be replaced. Existing/user-owned firewall rules are never taken over simply because they happen to match.
 
 ## Required development tools
