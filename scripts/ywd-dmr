@@ -3,6 +3,7 @@ set -u
 
 PUBLIC_RUNTIME_FILE="${YWD_DMR_PUBLIC_RUNTIME_FILE:-/etc/ywd-dmr/runtime.conf}"
 ENV_FILE="${YWD_DMR_ENV_FILE:-/etc/ywd-dmr/ywd-dmr.env}"
+FIREWALL_META_FILE="${YWD_DMR_FIREWALL_META_FILE:-/etc/ywd-dmr/firewall.conf}"
 SERVICE="${YWD_DMR_SERVICE:-ywd-dmrd.service}"
 
 usage() {
@@ -19,12 +20,16 @@ Usage:
 EOF
 }
 
-read_listen_from() {
-  local file="$1" value
+read_value_from() {
+  local key="$1" file="$2" value
   [ -r "$file" ] || return 1
-  value="$(sed -n 's/^YWD_DMR_LISTEN=//p' "$file" 2>/dev/null | tail -1)"
+  value="$(sed -n "s/^${key}=//p" "$file" 2>/dev/null | tail -1)"
   [ -n "$value" ] || return 1
   printf '%s\n' "$value"
+}
+
+read_listen_from() {
+  read_value_from YWD_DMR_LISTEN "$1"
 }
 
 listen_value() {
@@ -40,6 +45,20 @@ health_url() {
   port="${listen##*:}"
   [ -n "$port" ] || port=8989
   printf 'http://127.0.0.1:%s/api/v1/health\n' "$port"
+}
+
+firewall_summary() {
+  local provider managed source port
+  [ -r "$FIREWALL_META_FILE" ] || { printf 'not managed / no metadata\n'; return 0; }
+  provider="$(read_value_from YWD_DMR_FIREWALL_PROVIDER "$FIREWALL_META_FILE" 2>/dev/null || true)"
+  managed="$(read_value_from YWD_DMR_FIREWALL_MANAGED "$FIREWALL_META_FILE" 2>/dev/null || true)"
+  source="$(read_value_from YWD_DMR_FIREWALL_SOURCE "$FIREWALL_META_FILE" 2>/dev/null || true)"
+  port="$(read_value_from YWD_DMR_FIREWALL_PORT "$FIREWALL_META_FILE" 2>/dev/null || true)"
+  if [ "$managed" = 1 ]; then
+    printf '%s managed %s -> %s/tcp\n' "${provider:-firewall}" "${source:-unknown}" "${port:-unknown}"
+  else
+    printf '%s existing/user-owned %s -> %s/tcp\n' "${provider:-firewall}" "${source:-unknown}" "${port:-unknown}"
+  fi
 }
 
 case "${1:-}" in
@@ -69,6 +88,7 @@ case "${1:-}" in
     echo "YWD-DMR basic diagnostics"
     echo "========================="
     echo "Listener: ${listen:-not configured}"
+    echo "Firewall: $(firewall_summary)"
     if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
       echo "Service:  active"
     else
