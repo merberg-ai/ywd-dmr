@@ -18,6 +18,7 @@ The first on-air milestone is successful when a user can install YWD-DMR, finish
 - [x] Post-uninstall verifier for software-only and purge modes
 - [x] Radio identity model and non-mutating setup validation API
 - [x] Known-good configuration schema, atomic persistence, and rollback/recovery core
+- [x] Daemon-owned read-only setup status
 - [ ] Authentication and one-time first-run claim
 - [ ] Admin / Operator / Observer authorization model
 - [ ] Structured logging and support bundle
@@ -125,12 +126,14 @@ Current progress:
 - [x] Installed Pi 5 exercise of valid/invalid identity requests, strict JSON handling, and POST-only method enforcement.
 - [x] Durable known-good configuration file-store implementation.
 - [x] Schema/revision envelope, atomic writes, one previous rollback snapshot, invalid-candidate protection, and recovery tests.
-- [ ] Wire the store into daemon startup/setup state and exercise persistence on the installed appliance.
-- [ ] Daemon-owned setup-state model.
+- [x] Config-store unit suite, full Go suite, vet, and build passed on Pi 5 at the `2a889bb` checkpoint.
+- [x] Daemon startup loads known-good configuration and records missing/loaded/recovered/error state.
+- [x] Read-only `GET /api/v1/setup/status` with method/API tests.
+- [ ] Pi 5 installed-runtime exercise of missing/loaded/recovered setup status.
 - [ ] One-time installation claim.
 - [ ] Administrator authentication/session handling.
 - [ ] Observer / Operator / Admin server-side authorization.
-- [ ] Configuration validate/test/commit workflow exposed only behind the appropriate auth boundary.
+- [ ] Protected configuration validate/test/commit workflow.
 - [ ] Guided WebUI first-run wizard.
 
-The current LAN test dashboard remains unauthenticated. Until claim/authentication is implemented, do not router-forward or publicly expose it. The identity-validation endpoint is intentionally allowed before authentication only because it stores nothing, reveals no protected data, and controls no radio/network state. The new configuration file store is not yet reachable through a mutating HTTP endpoint.
+The current LAN test dashboard remains unauthenticated. Until claim/authentication is implemented, do not router-forward or publicly expose it. The identity-validation endpoint is intentionally allowed before authentication only because it stores nothing, reveals no protected data, and controls no radio/network state. The setup-status endpoint is also read-only and exposes only coarse configuration health metadata; it does not return the stored identity or secrets. The configuration file store is still not reachable through a mutating HTTP endpoint.
