@@ -75,7 +75,7 @@ The first on-air milestone is successful when a user can install YWD-DMR, finish
 Before DMR/network work grows, exercise the `dev` appliance workflow on a real Linux host:
 
 1. [x] fresh install on the default port 8989;
-2. [ ] occupied-port behavior;
+2. [x] occupied-port behavior for preserved configuration;
 3. [ ] service restart and boot behavior;
 4. [x] branded WebUI and versioned documentation delivery;
 5. [x] UFW-active LAN install with an installer-created managed rule;
@@ -102,12 +102,13 @@ On an Ubuntu host with active UFW and existing ham-radio/network services, YWD-D
 - verified the installer-created rule as YWD-DMR-owned and reported it correctly through diagnostics;
 - removed exactly the installer-owned managed UFW rule during normal uninstall while leaving unrelated UFW rules untouched;
 - removed firewall ownership metadata while preserving `/etc/ywd-dmr`, `/var/lib/ywd-dmr`, `/var/log/ywd-dmr`, `/var/backups/ywd-dmr`, and the restricted service account;
-- passed the authoritative post-uninstall verifier with the application tree, systemd unit, maintenance CLI, installed uninstaller, firewall metadata, and managed UFW rule all absent while persistent data and the service account remained intact.
+- passed the authoritative post-uninstall verifier with the application tree, systemd unit, maintenance CLI, installed uninstaller, firewall metadata, and managed UFW rule all absent while persistent data and the service account remained intact;
+- refused installation when the preserved configured port `8989` was occupied by an unrelated process, exited with status 1, left the foreign listener running, created no YWD-DMR service, and created no firewall rule.
 
 The installer-created-rule test exposed a UFW compatibility bug: the first implementation incorrectly used `--force` with a full `allow`/`delete allow` rule specification. The daemon remained healthy and verification correctly reported the firewall setup failure. The UFW commands were corrected to use normal full-rule syntax without `--force`, then the managed-rule installation and cleanup paths passed on the real host.
 
 A later test used `command -v ywd-dmr` immediately after uninstall and reported a possible remaining CLI. Because Bash can retain the old command path in its per-shell hash table even after `/usr/local/bin/ywd-dmr` is deleted, post-uninstall verification now checks the physical path directly and documents `hash -r` for clearing the interactive shell cache. The physical-path check and authoritative uninstall verifier both passed.
 
-Remaining appliance tests are occupied-port behavior, restart/boot persistence, full purge with safety backup, and a clean reinstall after purge.
+Remaining appliance tests are deliberate port override/persistence, restart/boot persistence, full purge with safety backup, a clean reinstall after purge, and the fresh-install free-port suggestion path after purge.
 
 Problems found here should be fixed before promoting this installer foundation to `main`.
