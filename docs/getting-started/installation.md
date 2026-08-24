@@ -80,7 +80,7 @@ After installation:
 sudo ./scripts/verify-install.sh
 ```
 
-You can also use the installed maintenance command:
+You can also use the installed maintenance command as your normal user:
 
 ```bash
 ywd-dmr status
@@ -88,6 +88,8 @@ ywd-dmr diagnose
 ywd-dmr url
 ywd-dmr logs
 ```
+
+`ywd-dmr diagnose` and `ywd-dmr url` do not need access to passwords or future BrandMeister credentials. The installer writes only non-sensitive listener information to `/etc/ywd-dmr/runtime.conf`, which local users may read. Protected daemon configuration remains in `/etc/ywd-dmr/ywd-dmr.env` with restricted permissions.
 
 ## What gets installed
 
@@ -97,7 +99,9 @@ The development appliance installer uses the same layout planned for production:
 /opt/ywd-dmr/releases/<release>/   application payloads
 /opt/ywd-dmr/current               active release symlink
 /opt/ywd-dmr/previous              previous release symlink when available
-/etc/ywd-dmr/                      configuration and ownership marker
+/etc/ywd-dmr/ywd-dmr.env           protected daemon configuration
+/etc/ywd-dmr/runtime.conf           non-sensitive runtime metadata
+/etc/ywd-dmr/install-owned-user     installer ownership marker
 /var/lib/ywd-dmr/                  persistent state and user plugins
 /var/log/ywd-dmr/                  YWD-DMR log storage
 /var/backups/ywd-dmr/              YWD-DMR backups
@@ -108,11 +112,13 @@ The development appliance installer uses the same layout planned for production:
 
 Application files are owned by root and are read-only to the runtime service. Persistent data is owned by the restricted `ywd-dmr` account. YWD-DMR does not run as root.
 
+The protected daemon configuration is intentionally not world-readable because it will later hold credentials and tokens. Public runtime metadata must never contain secrets.
+
 ## Re-running the installer
 
 Re-running the development installer is allowed. Existing YWD-DMR configuration is preserved unless you explicitly choose a new listener option. A new release directory is installed and the old `current` release becomes `previous`.
 
-The installer builds/tests first and stops the currently installed YWD-DMR service only when the replacement payload is ready. If the replacement fails its health check and a previous release exists, the installer attempts to restore the previous release/configuration.
+The installer builds/tests first and stops the currently installed YWD-DMR service only when the replacement payload is ready. If the replacement fails its health check and a previous release exists, the installer attempts to restore the previous release and both its protected and public runtime configuration.
 
 ## Required development tools
 
