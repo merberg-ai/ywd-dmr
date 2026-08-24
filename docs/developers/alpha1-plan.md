@@ -17,11 +17,11 @@ The first on-air milestone is successful when a user can install YWD-DMR, finish
 - [x] UFW LAN detection, LAN-only rule offer, ownership tracking, and safe uninstall cleanup
 - [x] Post-uninstall verifier for software-only and purge modes
 - [x] Radio identity model and non-mutating setup validation API
+- [x] Known-good configuration schema, atomic persistence, and rollback/recovery core
 - [ ] Authentication and one-time first-run claim
 - [ ] Admin / Operator / Observer authorization model
 - [ ] Structured logging and support bundle
-- [ ] Configuration schema and known-good transaction model beyond the current listener environment file
-- [ ] SQLite event/config persistence
+- [ ] SQLite event/history persistence where relational storage is justified
 
 ## DMR/network
 
@@ -114,21 +114,23 @@ The tested appliance foundation was promoted from `dev` to `main` through PR #2.
 
 ## Current Alpha1 focus — setup, security, and configuration
 
-The active work now establishes one authoritative setup/configuration/security contract before BrandMeister and audio work expands. See [Setup and Security Phase](setup-security-phase.md).
+The active work establishes one authoritative setup/configuration/security contract before BrandMeister and audio work expands. See [Setup and Security Phase](setup-security-phase.md) and [Known-good Configuration Store](configuration-store.md).
 
-Current slice:
+Current progress:
 
 - [x] Radio identity input and normalized model.
 - [x] Callsign, base DMR ID, and ESSID validation.
 - [x] `POST /api/v1/setup/identity/validate` as a non-mutating API.
 - [x] Unit/API coverage for normalization, invalid fields, JSON contract, and method restrictions.
-- [ ] Durable known-good configuration repository interface.
-- [ ] Persistent configuration storage and recovery behavior suitable for the Pi Zero / ARMv6 baseline.
+- [x] Installed Pi 5 exercise of valid/invalid identity requests, strict JSON handling, and POST-only method enforcement.
+- [x] Durable known-good configuration file-store implementation.
+- [x] Schema/revision envelope, atomic writes, one previous rollback snapshot, invalid-candidate protection, and recovery tests.
+- [ ] Wire the store into daemon startup/setup state and exercise persistence on the installed appliance.
 - [ ] Daemon-owned setup-state model.
 - [ ] One-time installation claim.
 - [ ] Administrator authentication/session handling.
 - [ ] Observer / Operator / Admin server-side authorization.
-- [ ] Configuration validate/test/commit workflow.
+- [ ] Configuration validate/test/commit workflow exposed only behind the appropriate auth boundary.
 - [ ] Guided WebUI first-run wizard.
 
-The current LAN test dashboard remains unauthenticated. Until claim/authentication is implemented, do not router-forward or publicly expose it. The identity-validation endpoint is intentionally allowed before authentication only because it stores nothing, reveals no protected data, and controls no radio/network state.
+The current LAN test dashboard remains unauthenticated. Until claim/authentication is implemented, do not router-forward or publicly expose it. The identity-validation endpoint is intentionally allowed before authentication only because it stores nothing, reveals no protected data, and controls no radio/network state. The new configuration file store is not yet reachable through a mutating HTTP endpoint.
