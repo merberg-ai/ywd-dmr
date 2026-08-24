@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,15 +13,25 @@ import (
 
 	"github.com/merberg-ai/ywd-dmr/internal/config"
 	"github.com/merberg-ai/ywd-dmr/internal/core"
+	"github.com/merberg-ai/ywd-dmr/internal/security"
 )
 
 type Server struct {
-	state *core.State
-	mux   *http.ServeMux
+	state    *core.State
+	security *security.Manager
+	mux      *http.ServeMux
 }
 
 func New(state *core.State, webRoot, docsRoot string) http.Handler {
-	s := &Server{state: state, mux: http.NewServeMux()}
+	return newServer(state, nil, webRoot, docsRoot)
+}
+
+func NewWithSecurity(state *core.State, securityManager *security.Manager, webRoot, docsRoot string) http.Handler {
+	return newServer(state, securityManager, webRoot, docsRoot)
+}
+
+func newServer(state *core.State, securityManager *security.Manager, webRoot, docsRoot string) http.Handler {
+	s := &Server{state: state, security: securityManager, mux: http.NewServeMux()}
 	s.routes(webRoot, docsRoot)
 	return securityHeaders(s.mux)
 }
@@ -51,6 +62,70 @@ func (s *Server) routes(webRoot, docsRoot string) {
 			return
 		}
 		writeJSON(w, http.StatusOK, config.ValidateRadioIdentity(input))
+	}))
+
+	// Claim is the one deliberate unauthenticated mutation: a fresh appliance
+	// can be claimed only with the high-entropy bootstrap secret available on
+	// the local machine. Success creates the first administrator and consumes
+	// that secret permanently.
+	s.mux.HandleFunc("/api/v1/setup/claim", s.postOnly(func(w http.ResponseWriter, r *http.Request) {
+		if s.security == nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "security service unavailable"})
+			return
+		}
+		var input security.ClaimRequest
+		if err := readJSON(w, r, &input); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON request"})
+			return
+		}
+		session, err := s.security.Claim(input)
+		if err != nil {
+			var validation *security.ClaimValidationError
+			switch {
+			case errors.As(err, &validation):
+				writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid claim request", "fields": validation.Errors})
+			case errors.Is(err, security.ErrInvalidClaimCode):
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "claim failed"})
+			case errors.Is(err, security.ErrAlreadyClaimed):
+				writeJSON(w, http.StatusConflict, map[string]string{"error": "installation is already claimed"})
+			default:
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "claim could not be completed"})
+			}
+			return
+		}
+		setSessionCookie(w, r, session.Token, session.Principal.Expires)
+		s.state.SetClaimed(true)
+		writeJSON(w, http.StatusCreated, map[string]any{
+			"claimed":    true,
+			"username":   session.Principal.Username,
+			"role":       session.Principal.Role,
+			"expires_at": session.Principal.Expires,
+		})
+	}))
+
+	// Session inspection is read-only and safe for the first-run WebUI. The
+	// opaque token remains only in the HttpOnly cookie and is never echoed back.
+	s.mux.HandleFunc("/api/v1/auth/session", s.getOnly(func(w http.ResponseWriter, r *http.Request) {
+		if s.security == nil {
+			writeJSON(w, http.StatusOK, map[string]any{"authenticated": false})
+			return
+		}
+		cookie, err := r.Cookie(security.SessionCookieName)
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]any{"authenticated": false})
+			return
+		}
+		principal, err := s.security.Authenticate(cookie.Value)
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]any{"authenticated": false})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"authenticated": true,
+			"username":      principal.Username,
+			"role":          principal.Role,
+			"expires_at":    principal.Expires,
+		})
 	}))
 
 	if dirExists(docsRoot) {
@@ -110,6 +185,23 @@ func readJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 		return err
 	}
 	return nil
+}
+
+func setSessionCookie(w http.ResponseWriter, r *http.Request, token string, expires time.Time) {
+	maxAge := int(time.Until(expires).Seconds())
+	if maxAge < 0 {
+		maxAge = 0
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     security.SessionCookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteStrictMode,
+		Expires:  expires,
+		MaxAge:   maxAge,
+	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
