@@ -15,6 +15,7 @@ The first on-air milestone is successful when a user can install YWD-DMR, finish
 - [x] Dedicated non-root service account and hardened systemd service
 - [x] Basic maintenance CLI and installed health-verification helper
 - [x] UFW LAN detection, LAN-only rule offer, ownership tracking, and safe uninstall cleanup
+- [x] Post-uninstall verifier for software-only and purge modes
 - [ ] Authentication and one-time first-run claim
 - [ ] Admin / Operator / Observer authorization model
 - [ ] Structured logging and support bundle
@@ -58,6 +59,7 @@ The first on-air milestone is successful when a user can install YWD-DMR, finish
 - [x] systemd unit and basic maintenance CLI
 - [x] CLI safe uninstall workflow with preserve/purge modes
 - [x] Install verification and post-start health check
+- [x] Post-uninstall verification that checks physical installed paths rather than shell command lookup
 - [ ] Production one-command GitHub-release installer using verified prebuilt packages
 - [ ] Guided WebUI first-run wizard
 - [ ] mDNS `ywd-dmr.local`
@@ -97,10 +99,14 @@ On an Ubuntu host with active UFW and existing ham-radio/network services, YWD-D
 - used that rule without claiming ownership or changing it;
 - reported firewall ownership correctly through verification and diagnostics;
 - created a tagged `YWD-DMR managed LAN` UFW rule for `192.168.1.0/24 -> 8989/tcp` when no equivalent rule existed;
-- verified the installer-created rule as YWD-DMR-owned and reported it correctly through diagnostics.
+- verified the installer-created rule as YWD-DMR-owned and reported it correctly through diagnostics;
+- removed exactly the installer-owned managed UFW rule during normal uninstall while leaving unrelated UFW rules untouched;
+- removed firewall ownership metadata while preserving `/etc/ywd-dmr`, `/var/lib/ywd-dmr`, `/var/log/ywd-dmr`, `/var/backups/ywd-dmr`, and the restricted service account.
 
-The installer-created-rule test exposed a UFW compatibility bug: the first implementation incorrectly used `--force` with a full `allow`/`delete allow` rule specification. The daemon remained healthy and verification correctly reported the firewall setup failure. The UFW commands were corrected to use normal full-rule syntax without `--force`, then the managed-rule installation path passed on the real host.
+The installer-created-rule test exposed a UFW compatibility bug: the first implementation incorrectly used `--force` with a full `allow`/`delete allow` rule specification. The daemon remained healthy and verification correctly reported the firewall setup failure. The UFW commands were corrected to use normal full-rule syntax without `--force`, then the managed-rule installation and cleanup paths passed on the real host.
 
-The remaining firewall test is uninstall cleanup: normal uninstall must remove the tagged installer-owned rule while leaving every unrelated UFW rule untouched.
+A later test used `command -v ywd-dmr` immediately after uninstall and reported a possible remaining CLI. Because Bash can retain the old command path in its per-shell hash table even after `/usr/local/bin/ywd-dmr` is deleted, post-uninstall verification now checks the physical path directly and documents `hash -r` for clearing the interactive shell cache.
+
+Remaining appliance tests are occupied-port behavior, restart/boot persistence, full purge with safety backup, and a clean reinstall after purge.
 
 Problems found here should be fixed before promoting this installer foundation to `main`.
