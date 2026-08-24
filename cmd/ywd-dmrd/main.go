@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/merberg-ai/ywd-dmr/internal/config"
 	"github.com/merberg-ai/ywd-dmr/internal/core"
 	"github.com/merberg-ai/ywd-dmr/internal/httpapi"
 )
@@ -20,7 +21,7 @@ var (
 )
 
 func main() {
-	listen := envOr("YWD_DMR_LISTEN", "127.0.0.1:8090")
+	listen := envOr("YWD_DMR_LISTEN", config.DefaultListen)
 	webRoot := envOr("YWD_DMR_WEB_ROOT", "web")
 	docsRoot := envOr("YWD_DMR_DOCS_ROOT", "docs")
 
