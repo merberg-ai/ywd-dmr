@@ -38,6 +38,9 @@ func (s *Server) routes(webRoot, docsRoot string) {
 	s.mux.HandleFunc("/api/v1/capabilities", s.getOnly(func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, s.state.Capabilities())
 	}))
+	s.mux.HandleFunc("/api/v1/setup/status", s.getOnly(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, s.state.SetupStatus())
+	}))
 
 	// Phase 2 starts with validation before persistence. This endpoint does not
 	// mutate daemon state, create credentials, or commit configuration.
