@@ -16,6 +16,7 @@ The first on-air milestone is successful when a user can install YWD-DMR, finish
 - [x] Basic maintenance CLI and installed health-verification helper
 - [x] UFW LAN detection, LAN-only rule offer, ownership tracking, and safe uninstall cleanup
 - [x] Post-uninstall verifier for software-only and purge modes
+- [x] Radio identity model and non-mutating setup validation API
 - [ ] Authentication and one-time first-run claim
 - [ ] Admin / Operator / Observer authorization model
 - [ ] Structured logging and support bundle
@@ -71,9 +72,9 @@ The first on-air milestone is successful when a user can install YWD-DMR, finish
 - [ ] production post-update health checkpoint
 - [ ] automatic rollback
 
-## Current install-test focus
+## Completed appliance validation
 
-Before DMR/network work grows, exercise the `dev` appliance workflow on real Linux hosts:
+Before DMR/network work grew, the `dev` appliance workflow was exercised on real Linux hosts:
 
 1. [x] fresh install on the default port 8989;
 2. [x] occupied-port behavior for preserved configuration;
@@ -86,9 +87,9 @@ Before DMR/network work grows, exercise the `dev` appliance workflow on real Lin
 9. [x] full purge with safety backup and post-purge verification;
 10. [x] clean reinstall after purge, including fresh-install free-port suggestion when default port 8989 is occupied.
 
-### Real-machine results so far
+### Real-machine results
 
-On an Ubuntu host with active UFW and existing ham-radio/network services, YWD-DMR has successfully:
+On an Ubuntu host with active UFW and existing ham-radio/network services, YWD-DMR successfully:
 
 - installed on `0.0.0.0:8989` without disturbing other listeners;
 - started and remained healthy under systemd;
@@ -96,29 +97,38 @@ On an Ubuntu host with active UFW and existing ham-radio/network services, YWD-D
 - passed installed-appliance verification;
 - completed software-only uninstall while preserving persistent configuration/data;
 - reinstalled from the preserved state;
-- detected an existing `192.168.1.0/24 -> 8989/tcp` UFW rule as user-owned;
-- used that rule without claiming ownership or changing it;
-- reported firewall ownership correctly through verification and diagnostics;
-- created a tagged `YWD-DMR managed LAN` UFW rule for `192.168.1.0/24 -> 8989/tcp` when no equivalent rule existed;
-- verified the installer-created rule as YWD-DMR-owned and reported it correctly through diagnostics;
-- removed exactly the installer-owned managed UFW rule during normal uninstall while leaving unrelated UFW rules untouched;
-- removed firewall ownership metadata while preserving `/etc/ywd-dmr`, `/var/lib/ywd-dmr`, `/var/log/ywd-dmr`, `/var/backups/ywd-dmr`, and the restricted service account;
-- passed the authoritative post-uninstall verifier with the application tree, systemd unit, maintenance CLI, installed uninstaller, firewall metadata, and managed UFW rule all absent while persistent data and the service account remained intact;
-- refused installation when the preserved configured port `8989` was occupied by an unrelated process, exited with status 1, left the foreign listener running, created no YWD-DMR service, and created no firewall rule;
-- deliberately moved the frontend from preserved port `8989` to `8990` using `--port 8990 --lan-test`, created the corresponding managed UFW rule, passed verification, then reinstalled without `--port` and correctly preserved `0.0.0.0:8990` plus the existing managed `8990/tcp` rule.
+- detected an equivalent UFW LAN rule as user-owned and used it without claiming ownership;
+- created, verified, diagnosed, and later removed exactly its own tagged managed UFW rule;
+- preserved unrelated firewall rules and services;
+- passed authoritative software-only and purge uninstall verification;
+- refused installation when a preserved configured port belonged to another process;
+- deliberately moved the listener to another port and preserved that choice across reinstall.
 
-On a Raspberry Pi 5 running a freshly installed ARM64 OS, YWD-DMR setup and installation completed as expected from a clean machine. After a real reboot, `ywd-dmrd.service` returned enabled and active, the listener remained `0.0.0.0:8989`, the health API responded, and the full installed-appliance verifier passed. This confirms both fresh ARM64 installation and systemd boot persistence without relying on state accumulated on the earlier Ubuntu test machine. The Pi 5 did not have YWD-DMR firewall metadata for this test, so verification correctly treated firewall integration as informational rather than a failure.
+On a Raspberry Pi 5 running a freshly installed ARM64 OS, YWD-DMR setup and installation completed from a clean machine. A real reboot returned `ywd-dmrd.service` enabled and active with the listener and health API intact. The same Pi completed a full purge with a protected external safety archive, passed the purge verifier, then completed a genuinely clean reinstall while default port 8989 was intentionally occupied; the installer selected free port 8990 without disturbing the unrelated listener.
 
-The same Pi 5 then completed a full `--purge-data` uninstall. `scripts/verify-uninstall.sh --purge-data` passed with the application tree, systemd unit, maintenance CLI, installed uninstaller, firewall metadata, configuration directory, data/plugins directory, log directory, managed backup directory, and installer-created `ywd-dmr` service account all removed. The final external safety archive remained at `/var/backups/ywd-dmr-uninstall-20260824-144546.tar.gz` with mode `0600`, owner `root:root`, and readable contents including `/etc/ywd-dmr` configuration/ownership files, `/var/lib/ywd-dmr/plugins`, and `/var/log/ywd-dmr`. This proves the purge removes YWD-DMR-owned persistent state while retaining the protected recovery archive outside the purge tree.
+The installer-created-rule tests exposed and fixed a UFW command-grammar compatibility issue. Final pre-promotion testing also exposed and fixed root-owned checkout build artifacts left by a sudo installer build. After that fix, a sudo reinstall returned `dist/` ownership to the normal user and an immediate normal-user build succeeded.
 
-After that verified purge, port `8989` was intentionally occupied by an unrelated temporary listener and the installer was run as a genuinely fresh install. YWD-DMR detected the occupied default port, selected the suggested free port `8990`, installed successfully, stored `YWD_DMR_LISTEN=0.0.0.0:8990`, started the service on `8990`, and passed the complete installed-appliance verifier and health diagnostics. The temporary `8989` listener was not disturbed. This closes both the clean-reinstall-after-purge test and the fresh-install free-port suggestion path.
+The final promotion gate passed shell syntax, maintenance CLI regression, managed-UFW grammar regression, `go test ./...`, `go vet ./...`, normal-user build, and `git diff --check`. GitHub CI also passed on the promotion PR.
 
-The installer-created-rule test exposed a UFW compatibility bug: the first implementation incorrectly used `--force` with a full `allow`/`delete allow` rule specification. The daemon remained healthy and verification correctly reported the firewall setup failure. The UFW commands were corrected to use normal full-rule syntax without `--force`, then the managed-rule installation and cleanup paths passed on the real host.
+The tested appliance foundation was promoted from `dev` to `main` through PR #2. `dev` was then fast-forwarded to that merge commit before new Alpha1 development resumed.
 
-A later test used `command -v ywd-dmr` immediately after uninstall and reported a possible remaining CLI. Because Bash can retain the old command path in its per-shell hash table even after `/usr/local/bin/ywd-dmr` is deleted, post-uninstall verification now checks the physical path directly and documents `hash -r` for clearing the interactive shell cache. The physical-path check and authoritative uninstall verifier both passed.
+## Current Alpha1 focus — setup, security, and configuration
 
-During the first pre-promotion gate on the Pi 5, shell syntax checks, maintenance/firewall regression tests, `go test ./...`, `go vet ./...`, `git diff --check`, and branch relationship checks passed, but a normal-user `./scripts/build.sh` failed replacing `dist/ywd-dmrd` with `permission denied`. The development installer runs its source build under `sudo`, so the generated checkout artifact had been left root-owned. `scripts/build.sh` was corrected to repair the generated `dist` directory/binary ownership back to the invoking sudo user on exit and now also accepts `YWD_DMR_BUILD_OUTPUT` for a caller-selected output path.
+The active work now establishes one authoritative setup/configuration/security contract before BrandMeister and audio work expands. See [Setup and Security Phase](setup-security-phase.md).
 
-That ownership regression was then re-tested on the same Pi 5. After one-time cleanup of the already-root-owned artifact, a normal-user build succeeded; a subsequent `sudo ./scripts/install.sh --lan-test` left both `dist/` and `dist/ywd-dmrd` owned by the normal `ywd` user; and another normal-user `./scripts/build.sh` immediately succeeded with exit code 0. The full final gate then passed again: shell syntax, maintenance CLI regression, managed-UFW grammar regression, `go test ./...`, `go vet ./...`, normal-user build, and `git diff --check` all completed without error. `main` had zero unique commits relative to `dev`, and the `dev` working tree was clean and synchronized with `origin/dev`.
+Current slice:
 
-The real-machine appliance validation matrix and final pre-promotion gate are complete. The tested installer/appliance foundation is ready for deliberate `dev` → `main` promotion review. `main` should still be advanced only through an explicit promotion decision; unfinished Alpha1 work such as authentication, BrandMeister networking, and audio/vocoder support remains correctly tracked as future development rather than a blocker for this foundation milestone.
+- [x] Radio identity input and normalized model.
+- [x] Callsign, base DMR ID, and ESSID validation.
+- [x] `POST /api/v1/setup/identity/validate` as a non-mutating API.
+- [x] Unit/API coverage for normalization, invalid fields, JSON contract, and method restrictions.
+- [ ] Durable known-good configuration repository interface.
+- [ ] Persistent configuration storage and recovery behavior suitable for the Pi Zero / ARMv6 baseline.
+- [ ] Daemon-owned setup-state model.
+- [ ] One-time installation claim.
+- [ ] Administrator authentication/session handling.
+- [ ] Observer / Operator / Admin server-side authorization.
+- [ ] Configuration validate/test/commit workflow.
+- [ ] Guided WebUI first-run wizard.
+
+The current LAN test dashboard remains unauthenticated. Until claim/authentication is implemented, do not router-forward or publicly expose it. The identity-validation endpoint is intentionally allowed before authentication only because it stores nothing, reveals no protected data, and controls no radio/network state.
