@@ -41,6 +41,28 @@ From a source checkout, the equivalent command is:
 sudo bash scripts/uninstall.sh
 ```
 
+## Verify a completed uninstall
+
+The repository includes a post-uninstall verifier that checks the actual filesystem, systemd unit, firewall tag, persistent data, and service account:
+
+```bash
+bash scripts/verify-uninstall.sh
+```
+
+After a full purge, use:
+
+```bash
+bash scripts/verify-uninstall.sh --purge-data
+```
+
+The verifier intentionally checks `/usr/local/bin/ywd-dmr` directly instead of relying on `command -v ywd-dmr`. Bash keeps a per-shell command hash table, so a shell that previously ran `ywd-dmr` can temporarily remember the removed path even after the file is gone. If an interactive shell still reports the old command after uninstall, clear its cache with:
+
+```bash
+hash -r
+```
+
+Then `command -v ywd-dmr` should no longer resolve it. The child uninstaller process cannot clear the parent interactive shell's hash table.
+
 ## Firewall cleanup safety
 
 When the installer creates a UFW LAN rule, it tags the rule with:
@@ -133,11 +155,13 @@ A root-owned marker in `/etc/ywd-dmr/install-owned-user` records that the instal
 1. Install with `sudo ./scripts/install.sh` (or `--lan-test`).
 2. Run `sudo ./scripts/verify-install.sh`.
 3. If UFW is active, note whether verification reports an installer-managed or existing/user-owned rule.
-4. Run `sudo ywd-dmr uninstall` and confirm the service/application are gone while `/etc/ywd-dmr` and `/var/lib/ywd-dmr` remain.
-5. If the firewall rule was installer-managed, confirm it was removed. If it was pre-existing, confirm it remains.
-6. Reinstall and confirm the preserved listener/config returns and any needed managed firewall rule is recreated.
-7. Run `sudo ywd-dmr uninstall --purge-data` and confirm the final safety backup is printed.
-8. For an absolutely clean test, use `--purge-data --no-backup` only after you no longer need the safety archive.
+4. Run `sudo ywd-dmr uninstall`.
+5. Run `bash scripts/verify-uninstall.sh` and require a pass.
+6. If the firewall rule was installer-managed, confirm it was removed. If it was pre-existing, confirm it remains.
+7. Reinstall and confirm the preserved listener/config returns and any needed managed firewall rule is recreated.
+8. Run `sudo ywd-dmr uninstall --purge-data` and confirm the final safety backup is printed.
+9. Run `bash scripts/verify-uninstall.sh --purge-data`.
+10. For an absolutely clean test, use `--purge-data --no-backup` only after you no longer need the safety archive.
 
 ## Adding installed files or integrations later
 
