@@ -2,12 +2,15 @@ package httpapi
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/merberg-ai/ywd-dmr/internal/config"
 	"github.com/merberg-ai/ywd-dmr/internal/core"
 )
 
@@ -36,6 +39,17 @@ func (s *Server) routes(webRoot, docsRoot string) {
 		writeJSON(w, http.StatusOK, s.state.Capabilities())
 	}))
 
+	// Phase 2 starts with validation before persistence. This endpoint does not
+	// mutate daemon state, create credentials, or commit configuration.
+	s.mux.HandleFunc("/api/v1/setup/identity/validate", s.postOnly(func(w http.ResponseWriter, r *http.Request) {
+		var input config.RadioIdentityInput
+		if err := readJSON(w, r, &input); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON request"})
+			return
+		}
+		writeJSON(w, http.StatusOK, config.ValidateRadioIdentity(input))
+	}))
+
 	if dirExists(docsRoot) {
 		s.mux.Handle("/docs/", http.StripPrefix("/docs/", http.FileServer(http.Dir(docsRoot))))
 	}
@@ -59,14 +73,40 @@ func (s *Server) routes(webRoot, docsRoot string) {
 }
 
 func (s *Server) getOnly(fn http.HandlerFunc) http.HandlerFunc {
+	return methodOnly(http.MethodGet, fn)
+}
+
+func (s *Server) postOnly(fn http.HandlerFunc) http.HandlerFunc {
+	return methodOnly(http.MethodPost, fn)
+}
+
+func methodOnly(method string, fn http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.Header().Set("Allow", http.MethodGet)
+		if r.Method != method {
+			w.Header().Set("Allow", method)
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 			return
 		}
 		fn(w, r)
 	}
+}
+
+func readJSON(w http.ResponseWriter, r *http.Request, dst any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, 32*1024)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(dst); err != nil {
+		return err
+	}
+
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("request must contain exactly one JSON value")
+		}
+		return err
+	}
+	return nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
