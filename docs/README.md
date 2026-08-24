@@ -10,11 +10,18 @@ The copy in this folder is the canonical documentation for the matching YWD-DMR 
 - [First-run setup](getting-started/first-run.md)
 - [Troubleshooting: start here](troubleshooting/start-here.md)
 - [Updates and rollback](operations/updates.md)
+- [Listening port and port-conflict handling](operations/listening-ports.md)
+- [Firewall and LAN access](operations/firewall.md)
+- [Safely uninstalling YWD-DMR](operations/uninstall.md)
 
 ## For developers and advanced users
 
 - [Architecture](developers/architecture.md)
 - [Alpha 1 plan](developers/alpha1-plan.md)
+- [Branching and releases](developers/branching-and-releases.md)
+- [Licensing status](developers/licensing.md)
+- [Frontend branding and asset rules](developers/frontend-branding.md)
+- [Installation ownership and safe removal](developers/install-ownership.md)
 - [Control API v1](protocols/control-api-v1.md)
 - [Event API v1](protocols/event-api-v1.md)
 - [Audio Stream v1](protocols/audio-stream-v1.md)
@@ -22,4 +29,4 @@ The copy in this folder is the canonical documentation for the matching YWD-DMR 
 
 ## Documentation rule
 
-Documentation changes are mandatory when the matching behavior changes. This includes UI, configuration, APIs, installation, updates, recovery, network behavior, vocoders, troubleshooting, security, and architecture.
+Documentation changes are mandatory when the matching behavior changes. This includes UI, branding/assets, configuration, ports/listeners, firewall behavior, APIs, installation, uninstall/removal, updates, recovery, network behavior, vocoders, troubleshooting, security, architecture, branching, licensing, and release workflow.

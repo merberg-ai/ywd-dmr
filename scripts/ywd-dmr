@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+set -u
+
+PUBLIC_RUNTIME_FILE="${YWD_DMR_PUBLIC_RUNTIME_FILE:-/etc/ywd-dmr/runtime.conf}"
+ENV_FILE="${YWD_DMR_ENV_FILE:-/etc/ywd-dmr/ywd-dmr.env}"
+FIREWALL_META_FILE="${YWD_DMR_FIREWALL_META_FILE:-/etc/ywd-dmr/firewall.conf}"
+SERVICE="${YWD_DMR_SERVICE:-ywd-dmrd.service}"
+
+usage() {
+  cat <<'EOF'
+YWD-DMR maintenance command
+
+Usage:
+  ywd-dmr status
+  ywd-dmr diagnose
+  ywd-dmr logs
+  ywd-dmr url
+  sudo ywd-dmr start|stop|restart
+  sudo ywd-dmr uninstall [uninstaller options]
+EOF
+}
+
+read_value_from() {
+  local key="$1" file="$2" value
+  [ -r "$file" ] || return 1
+  value="$(sed -n "s/^${key}=//p" "$file" 2>/dev/null | tail -1)"
+  [ -n "$value" ] || return 1
+  printf '%s\n' "$value"
+}
+
+read_listen_from() {
+  read_value_from YWD_DMR_LISTEN "$1"
+}
+
+listen_value() {
+  read_listen_from "$PUBLIC_RUNTIME_FILE" && return 0
+  read_listen_from "$ENV_FILE" && return 0
+  return 1
+}
+
+health_url() {
+  local listen port
+  listen="$(listen_value 2>/dev/null || printf '127.0.0.1:8989')"
+  [ -n "$listen" ] || listen='127.0.0.1:8989'
+  port="${listen##*:}"
+  [ -n "$port" ] || port=8989
+  printf 'http://127.0.0.1:%s/api/v1/health\n' "$port"
+}
+
+firewall_summary() {
+  local provider managed status source port
+  [ -r "$FIREWALL_META_FILE" ] || { printf 'not managed / no metadata\n'; return 0; }
+  provider="$(read_value_from YWD_DMR_FIREWALL_PROVIDER "$FIREWALL_META_FILE" 2>/dev/null || true)"
+  managed="$(read_value_from YWD_DMR_FIREWALL_MANAGED "$FIREWALL_META_FILE" 2>/dev/null || true)"
+  status="$(read_value_from YWD_DMR_FIREWALL_STATUS "$FIREWALL_META_FILE" 2>/dev/null || printf ok)"
+  source="$(read_value_from YWD_DMR_FIREWALL_SOURCE "$FIREWALL_META_FILE" 2>/dev/null || true)"
+  port="$(read_value_from YWD_DMR_FIREWALL_PORT "$FIREWALL_META_FILE" 2>/dev/null || true)"
+  if [ "$status" = failed ]; then
+    printf '%s SETUP FAILED %s -> %s/tcp\n' "${provider:-firewall}" "${source:-unknown}" "${port:-unknown}"
+  elif [ "$managed" = 1 ]; then
+    printf '%s managed %s -> %s/tcp\n' "${provider:-firewall}" "${source:-unknown}" "${port:-unknown}"
+  else
+    printf '%s existing/user-owned %s -> %s/tcp\n' "${provider:-firewall}" "${source:-unknown}" "${port:-unknown}"
+  fi
+}
+
+case "${1:-}" in
+  status)
+    systemctl --no-pager --full status "$SERVICE"
+    ;;
+  start|stop|restart)
+    [ "$(id -u)" -eq 0 ] || { echo "Run this command with sudo." >&2; exit 1; }
+    systemctl "$1" "$SERVICE"
+    ;;
+  logs)
+    journalctl -u "$SERVICE" -n 100 --no-pager
+    ;;
+  url)
+    listen="$(listen_value 2>/dev/null || printf '127.0.0.1:8989')"
+    [ -n "$listen" ] || listen='127.0.0.1:8989'
+    host="${listen%:*}"
+    port="${listen##*:}"
+    if [ "$host" = 0.0.0.0 ]; then
+      ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+      [ -n "$ip" ] && host="$ip"
+    fi
+    printf 'http://%s:%s/\n' "$host" "$port"
+    ;;
+  diagnose)
+    listen="$(listen_value 2>/dev/null || true)"
+    echo "YWD-DMR basic diagnostics"
+    echo "========================="
+    echo "Listener: ${listen:-not configured}"
+    echo "Firewall: $(firewall_summary)"
+    if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
+      echo "Service:  active"
+    else
+      echo "Service:  NOT ACTIVE"
+    fi
+    if command -v curl >/dev/null 2>&1 && curl -fsS --max-time 3 "$(health_url)"; then
+      echo
+      echo "Health:   API responded"
+    else
+      echo "Health:   API did not respond"
+    fi
+    echo "Current:  $(readlink -f /opt/ywd-dmr/current 2>/dev/null || echo 'not installed')"
+    echo "Previous: $(readlink -f /opt/ywd-dmr/previous 2>/dev/null || echo 'none')"
+    ;;
+  uninstall)
+    shift
+    [ "$(id -u)" -eq 0 ] || { echo "Run uninstall with sudo." >&2; exit 1; }
+    exec /usr/local/sbin/ywd-dmr-uninstall "$@"
+    ;;
+  -h|--help|help|"") usage ;;
+  *) echo "Unknown command: $1" >&2; usage; exit 2 ;;
+esac

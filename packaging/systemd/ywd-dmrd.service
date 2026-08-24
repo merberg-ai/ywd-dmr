@@ -1,0 +1,41 @@
+[Unit]
+Description=YWD-DMR radio-less DMR appliance
+Documentation=https://github.com/merberg-ai/ywd-dmr
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ywd-dmr
+Group=ywd-dmr
+EnvironmentFile=/etc/ywd-dmr/ywd-dmr.env
+WorkingDirectory=/opt/ywd-dmr/current
+ExecStart=/opt/ywd-dmr/current/bin/ywd-dmrd
+Restart=on-failure
+RestartSec=3s
+TimeoutStopSec=10s
+UMask=0077
+
+# Service hardening. YWD-DMR does not need root at runtime.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/ywd-dmr /var/log/ywd-dmr
+
+# Do not use PrivateDevices=true here: local microphones/speakers and USB
+# hardware vocoders need controlled access to host device nodes. Installer and
+# device-management code will grant only the groups/devices actually required.
+
+[Install]
+WantedBy=multi-user.target
