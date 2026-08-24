@@ -15,6 +15,7 @@ The copy in this folder is the canonical documentation for the matching YWD-DMR 
 
 - [Architecture](developers/architecture.md)
 - [Alpha 1 plan](developers/alpha1-plan.md)
+- [Branching and releases](developers/branching-and-releases.md)
 - [Control API v1](protocols/control-api-v1.md)
 - [Event API v1](protocols/event-api-v1.md)
 - [Audio Stream v1](protocols/audio-stream-v1.md)
@@ -22,4 +23,4 @@ The copy in this folder is the canonical documentation for the matching YWD-DMR 
 
 ## Documentation rule
 
-Documentation changes are mandatory when the matching behavior changes. This includes UI, configuration, APIs, installation, updates, recovery, network behavior, vocoders, troubleshooting, security, and architecture.
+Documentation changes are mandatory when the matching behavior changes. This includes UI, configuration, APIs, installation, updates, recovery, network behavior, vocoders, troubleshooting, security, architecture, branching, and release workflow.
