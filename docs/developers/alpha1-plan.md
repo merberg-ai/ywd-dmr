@@ -84,7 +84,7 @@ Before DMR/network work grows, exercise the `dev` appliance workflow on real Lin
 7. [x] normal uninstall while preserving configuration/data;
 8. [x] reinstall using preserved configuration;
 9. [x] full purge with safety backup and post-purge verification;
-10. [ ] clean reinstall after purge.
+10. [x] clean reinstall after purge, including fresh-install free-port suggestion when default port 8989 is occupied.
 
 ### Real-machine results so far
 
@@ -111,10 +111,10 @@ On a Raspberry Pi 5 running a freshly installed ARM64 OS, YWD-DMR setup and inst
 
 The same Pi 5 then completed a full `--purge-data` uninstall. `scripts/verify-uninstall.sh --purge-data` passed with the application tree, systemd unit, maintenance CLI, installed uninstaller, firewall metadata, configuration directory, data/plugins directory, log directory, managed backup directory, and installer-created `ywd-dmr` service account all removed. The final external safety archive remained at `/var/backups/ywd-dmr-uninstall-20260824-144546.tar.gz` with mode `0600`, owner `root:root`, and readable contents including `/etc/ywd-dmr` configuration/ownership files, `/var/lib/ywd-dmr/plugins`, and `/var/log/ywd-dmr`. This proves the purge removes YWD-DMR-owned persistent state while retaining the protected recovery archive outside the purge tree.
 
+After that verified purge, port `8989` was intentionally occupied by an unrelated temporary listener and the installer was run as a genuinely fresh install. YWD-DMR detected the occupied default port, selected the suggested free port `8990`, installed successfully, stored `YWD_DMR_LISTEN=0.0.0.0:8990`, started the service on `8990`, and passed the complete installed-appliance verifier and health diagnostics. The temporary `8989` listener was not disturbed. This closes both the clean-reinstall-after-purge test and the fresh-install free-port suggestion path.
+
 The installer-created-rule test exposed a UFW compatibility bug: the first implementation incorrectly used `--force` with a full `allow`/`delete allow` rule specification. The daemon remained healthy and verification correctly reported the firewall setup failure. The UFW commands were corrected to use normal full-rule syntax without `--force`, then the managed-rule installation and cleanup paths passed on the real host.
 
 A later test used `command -v ywd-dmr` immediately after uninstall and reported a possible remaining CLI. Because Bash can retain the old command path in its per-shell hash table even after `/usr/local/bin/ywd-dmr` is deleted, post-uninstall verification now checks the physical path directly and documents `hash -r` for clearing the interactive shell cache. The physical-path check and authoritative uninstall verifier both passed.
 
-Remaining appliance tests are a clean reinstall after purge and the fresh-install free-port suggestion path after purge.
-
-Problems found here should be fixed before promoting this installer foundation to `main`.
+The real-machine appliance validation matrix is now complete. Before promoting this installer foundation to `main`, review the full `dev` diff, run repository checks/CI, and confirm no unrelated or unfinished development work is being promoted accidentally.
