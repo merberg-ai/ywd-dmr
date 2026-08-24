@@ -6,16 +6,46 @@ import (
 	"time"
 )
 
+type SetupConfigStatus struct {
+	State              string `json:"state"`
+	Revision           uint64 `json:"revision,omitempty"`
+	IdentityConfigured bool   `json:"identity_configured"`
+	Recovered          bool   `json:"recovered"`
+}
+
+type SetupStatus struct {
+	Claimed       bool              `json:"claimed"`
+	Stage         string            `json:"stage"`
+	NextStep      string            `json:"next_step"`
+	Configuration SetupConfigStatus `json:"configuration"`
+}
+
 type State struct {
 	mu        sync.RWMutex
 	startedAt time.Time
 	version   string
 	commit    string
 	branch    string
+	setup     SetupStatus
 }
 
 func NewState(version, commit, branch string) *State {
-	return &State{startedAt: time.Now().UTC(), version: version, commit: commit, branch: branch}
+	return &State{
+		startedAt: time.Now().UTC(),
+		version:   version,
+		commit:    commit,
+		branch:    branch,
+		setup: SetupStatus{
+			Claimed:  false,
+			Stage:    "unclaimed",
+			NextStep: "claim",
+			Configuration: SetupConfigStatus{
+				State:              "missing",
+				IdentityConfigured: false,
+				Recovered:          false,
+			},
+		},
+	}
 }
 
 func (s *State) System() map[string]any {
@@ -43,6 +73,33 @@ func (s *State) Status() map[string]any {
 		"destination": nil,
 		"rx":          false,
 		"tx":          false,
+	}
+}
+
+func (s *State) SetupStatus() SetupStatus {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.setup
+}
+
+func (s *State) SetKnownGoodConfiguration(revision uint64, recovered bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.setup.Configuration = SetupConfigStatus{
+		State:              map[bool]string{true: "recovered", false: "loaded"}[recovered],
+		Revision:           revision,
+		IdentityConfigured: true,
+		Recovered:          recovered,
+	}
+}
+
+func (s *State) SetConfigurationLoadError() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.setup.Configuration = SetupConfigStatus{
+		State:              "error",
+		IdentityConfigured: false,
+		Recovered:          false,
 	}
 }
 
