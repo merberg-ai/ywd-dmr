@@ -14,6 +14,7 @@ The first on-air milestone is successful when a user can install YWD-DMR, finish
 - [x] Development appliance installer for repeat install/uninstall testing
 - [x] Dedicated non-root service account and hardened systemd service
 - [x] Basic maintenance CLI and installed health-verification helper
+- [x] UFW LAN detection, LAN-only rule offer, ownership tracking, and safe uninstall cleanup
 - [ ] Authentication and one-time first-run claim
 - [ ] Admin / Operator / Observer authorization model
 - [ ] Structured logging and support bundle
@@ -53,6 +54,7 @@ The first on-air milestone is successful when a user can install YWD-DMR, finish
 ## Appliance workflow
 
 - [x] Development installer port-conflict detection, free-port suggestion, and configurable bind/listen settings
+- [x] Safe UFW integration for LAN installs without taking ownership of pre-existing rules
 - [x] systemd unit and basic maintenance CLI
 - [x] CLI safe uninstall workflow with preserve/purge modes
 - [x] Install verification and post-start health check
@@ -74,9 +76,11 @@ Before DMR/network work grows, exercise the `dev` appliance workflow on a real L
 2. occupied-port behavior;
 3. service start/restart/boot behavior;
 4. branded WebUI and versioned documentation delivery;
-5. normal uninstall while preserving configuration/data;
-6. reinstall using preserved configuration;
-7. full purge with safety backup;
-8. clean reinstall after purge.
+5. UFW-active LAN install with an installer-created managed rule;
+6. UFW-active LAN install with an equivalent pre-existing rule that must remain user-owned;
+7. normal uninstall while preserving configuration/data and removing only installer-owned firewall integration;
+8. reinstall using preserved configuration;
+9. full purge with safety backup;
+10. clean reinstall after purge.
 
 Problems found here should be fixed before promoting this installer foundation to `main`.
