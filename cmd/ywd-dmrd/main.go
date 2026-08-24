@@ -13,6 +13,7 @@ import (
 	"github.com/merberg-ai/ywd-dmr/internal/config"
 	"github.com/merberg-ai/ywd-dmr/internal/core"
 	"github.com/merberg-ai/ywd-dmr/internal/httpapi"
+	"github.com/merberg-ai/ywd-dmr/internal/security"
 )
 
 var (
@@ -28,6 +29,19 @@ func main() {
 	stateDir := envOr("YWD_DMR_STATE_DIR", config.DefaultStateDir)
 
 	state := core.NewState(version, commit, branch)
+
+	securityManager := security.NewManager(stateDir)
+	securityInit, err := securityManager.Initialize()
+	if err != nil {
+		// Security-state corruption must fail closed. Never silently regenerate a
+		// claim code when an existing claimed installation cannot be trusted.
+		log.Fatalf("security initialization failed: %v", err)
+	}
+	state.SetClaimed(securityInit.Claimed)
+	if !securityInit.Claimed {
+		log.Printf("installation is unclaimed; retrieve the one-time setup code locally with: sudo ywd-dmr claim-code")
+	}
+
 	store := config.NewFileStore(stateDir)
 	if loaded, err := store.Load(); err == nil {
 		state.SetKnownGoodConfiguration(loaded.Config.Revision, loaded.RecoveredFromPrevious)
@@ -39,7 +53,7 @@ func main() {
 		log.Printf("WARNING: known-good configuration could not be loaded: %v", err)
 	}
 
-	handler := httpapi.New(state, webRoot, docsRoot)
+	handler := httpapi.New(state, securityManager, webRoot, docsRoot)
 
 	srv := &http.Server{
 		Addr:              listen,
