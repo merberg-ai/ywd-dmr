@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -24,8 +25,20 @@ func main() {
 	listen := envOr("YWD_DMR_LISTEN", config.DefaultListen)
 	webRoot := envOr("YWD_DMR_WEB_ROOT", "web")
 	docsRoot := envOr("YWD_DMR_DOCS_ROOT", "docs")
+	stateDir := envOr("YWD_DMR_STATE_DIR", config.DefaultStateDir)
 
 	state := core.NewState(version, commit, branch)
+	store := config.NewFileStore(stateDir)
+	if loaded, err := store.Load(); err == nil {
+		state.SetKnownGoodConfiguration(loaded.Config.Revision, loaded.RecoveredFromPrevious)
+		if loaded.RecoveredFromPrevious {
+			log.Printf("WARNING: known-good configuration recovered from previous snapshot (revision %d)", loaded.Config.Revision)
+		}
+	} else if !errors.Is(err, config.ErrNoKnownGoodConfig) {
+		state.SetConfigurationLoadError()
+		log.Printf("WARNING: known-good configuration could not be loaded: %v", err)
+	}
+
 	handler := httpapi.New(state, webRoot, docsRoot)
 
 	srv := &http.Server{
