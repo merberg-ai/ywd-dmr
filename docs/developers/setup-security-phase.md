@@ -32,7 +32,7 @@ The first slice was exercised on the installed Raspberry Pi 5 appliance. A valid
 
 ### 2. Known-good configuration store
 
-The daemon now has a small durable configuration store with operations equivalent to:
+The daemon has a small durable configuration store with operations equivalent to:
 
 ```text
 load current known-good
@@ -54,15 +54,11 @@ A candidate is normalized and validated before any durable state changes. On lat
 
 See [Known-good Configuration Store](configuration-store.md) for the schema, atomic-write rules, rollback behavior, and security boundary.
 
-The storage implementation remains suitable for the Raspberry Pi Zero / ARMv6 baseline: no database runtime is required for this small settings document, and the implementation cross-compiles with the rest of the standard-library-only daemon.
-
-The configuration-store unit suite, full Go suite, vet, and normal-user build all passed on the Raspberry Pi 5 at the `2a889bb` development checkpoint. Runtime startup/recovery wiring is exercised separately because no unauthenticated mutation endpoint is being added merely to make a test convenient.
-
-Secrets must never be returned by a normal configuration read API after storage. No BrandMeister or administrator secret is stored by this slice.
+The configuration-store unit suite, full Go suite, vet, and normal-user build passed on the Raspberry Pi 5 at the `2a889bb` development checkpoint.
 
 ### 3. Daemon-owned setup status
 
-The daemon now loads the known-good store at startup and records only the minimum setup metadata needed by clients. It exposes:
+The daemon loads the known-good store at startup and records only the minimum setup metadata needed by clients. It exposes:
 
 ```text
 GET /api/v1/setup/status
@@ -70,43 +66,76 @@ GET /api/v1/setup/status
 
 The public setup status never returns the stored callsign/DMR ID/ESSID or any future secret. It reports whether configuration is missing, loaded, recovered from the previous snapshot, or unreadable; whether identity is configured; and the current daemon-owned revision when available.
 
-During the pre-authentication development stage a new daemon still reports:
-
-```text
-claimed: false
-stage: unclaimed
-next_step: claim
-```
-
-That remains true even if a configuration fixture exists during development testing. Claim/auth code will own the real stage transitions later; the browser is never allowed to infer or manufacture them.
-
 A startup recovery from `known-good.previous.json` is visible as `configuration.state: recovered` and is also written to the daemon log as a warning. A hard load failure is exposed only as `configuration.state: error`; detailed filesystem/decoder errors remain server-side.
 
-### 4. One-time claim and administrator authentication
+This runtime path was exercised on the installed Raspberry Pi 5. The daemon correctly reported `missing`, then `loaded` after a valid fixture was installed, then `recovered` after the current snapshot was deliberately corrupted while a valid previous snapshot remained. The service journal emitted the expected recovery warning. Removing both fixtures and restarting returned the daemon to `missing`, and final health diagnostics passed.
 
-A fresh installation starts unclaimed.
+### 4. One-time installation claim
 
-The claim flow must:
+A fresh installation now has a real bootstrap security state.
 
-1. use a one-time setup secret/code;
-2. allow creation of the first administrator without a default password;
-3. invalidate the claim secret after successful use;
-4. create an opaque browser session rather than exposing reusable credentials to JavaScript;
-5. enforce authorization in the daemon, not by hiding WebUI buttons.
+When no valid `/var/lib/ywd-dmr/security.json` exists, the daemon creates a 120-bit one-time claim code in:
 
-The roles remain:
+```text
+/var/lib/ywd-dmr/claim-code
+```
 
-- **Observer** — view status/history but cannot change radio state;
-- **Operator** — normal radio operation, including authorized PTT later;
-- **Admin** — configuration, account/device management, updates, and maintenance controls.
+The file is mode `0600` inside the restricted state directory and is intended to be retrieved locally with:
 
-PTT will still require a separate renewable TX lease and timeout even for an authenticated Operator/Admin.
+```bash
+sudo ywd-dmr claim-code
+```
 
-### 5. Protected configuration commit APIs
+The development claim API is:
 
-Once claim/auth exists, add protected endpoints that submit candidate settings through the known-good transaction path.
+```text
+POST /api/v1/setup/claim
+```
 
-The setup state will eventually progress through states such as:
+The request contains the claim code plus the first administrator username/password. The code is normalized for copy/paste convenience but compared in constant time. A wrong code does not change state. A successful claim:
+
+1. validates the administrator username/password policy;
+2. creates a random password salt;
+3. derives the stored password verifier with standard-library PBKDF2-HMAC-SHA256;
+4. atomically writes `/var/lib/ywd-dmr/security.json` mode `0600`;
+5. marks the installation claimed;
+6. deletes the plaintext claim-code file on a best-effort basis;
+7. creates an opaque in-memory administrator session and sets it only in an HttpOnly `SameSite=Strict` cookie.
+
+The session token is not returned in JSON. On current HTTP LAN-test installs the cookie cannot use the browser `Secure` flag because the connection is not TLS; once normal remote/LAN security moves to HTTPS, authenticated cookies must be Secure as well.
+
+Claim is deliberately one-time. Once the durable security document exists, claim requests return a conflict and daemon startup will never silently regenerate a new claim code. If an existing `security.json` is malformed or unsupported, daemon startup fails closed rather than treating the machine as a new unclaimed appliance.
+
+The stored password record includes its algorithm, salt, and iteration count so the verifier can be upgraded later without guessing which KDF produced an old record. No plaintext administrator password is stored.
+
+### 5. Administrator login and protected authorization
+
+The current claim slice creates the first administrator and an initial browser session, but normal password login after a daemon restart is intentionally the next slice.
+
+The planned authentication layer must add:
+
+- password verification against the persisted administrator record;
+- login throttling/rate limiting;
+- explicit logout/session invalidation;
+- server-side authorization middleware;
+- Observer / Operator / Admin roles;
+- origin/CSRF protections for authenticated mutating browser requests.
+
+Sessions are memory-only in the current claim slice. Restarting the daemon therefore invalidates browser sessions rather than persisting a reusable browser token to disk.
+
+The current read-only session inspection endpoint is:
+
+```text
+GET /api/v1/auth/session
+```
+
+It reports whether the HttpOnly cookie maps to a live session and, when authenticated, returns only username, role, and expiry metadata.
+
+### 6. Protected configuration commit APIs
+
+Once login/authorization exists, protected endpoints can submit candidate settings through the known-good transaction path.
+
+The setup state progresses through daemon-owned states such as:
 
 ```text
 unclaimed
@@ -116,44 +145,44 @@ network configured / audio incomplete
 ready
 ```
 
-These are daemon states, not WebUI guesses.
-
 Configuration changes follow validate -> test -> commit. A failed candidate or later BrandMeister connectivity test must not destroy the last known-good configuration.
 
-### 6. BrandMeister configuration
+### 7. BrandMeister configuration
 
 Only after the configuration/security contract exists should the first network backend accept DMR identity, master selection, credentials, reconnect policy, and destination/talkgroup configuration.
 
 Network settings follow validate -> test -> commit. A failed BrandMeister test must not destroy the last known-good configuration.
 
-### 7. Guided WebUI wizard
+### 8. Guided WebUI wizard
 
-The WebUI then becomes a client of the same setup APIs used by future Android/CLI clients. It should use plain-language pages, explain DMR terms in context, and offer useful retry/troubleshooting guidance when a test fails.
+The WebUI becomes a client of the same setup APIs used by future Android/CLI clients. It should use plain-language pages, explain DMR terms in context, and offer useful retry/troubleshooting guidance when a test fails.
 
 ## Security boundary during development
 
-The current LAN test dashboard remains unauthenticated. Do **not** router-forward or publicly expose it.
+The current LAN test dashboard is still not a production-authenticated interface. Do **not** router-forward or publicly expose it.
 
-The identity-validation endpoint is temporarily callable without authentication because it only normalizes user-supplied non-secret data and changes no state. `GET /api/v1/setup/status` is also temporarily readable because it exposes only coarse setup/configuration health metadata and never returns the stored identity or secrets. The file store is not exposed through a mutating HTTP endpoint yet.
+The identity-validation endpoint is callable without authentication because it only normalizes caller-supplied non-secret data and changes no state. `GET /api/v1/setup/status` exposes only coarse setup/configuration health metadata. `POST /api/v1/setup/claim` is the one deliberate unauthenticated mutation and requires the high-entropy bootstrap code available only from the local appliance filesystem.
 
-Any endpoint that stores configuration, creates sessions/accounts, reveals protected information, or controls radio/network state must wait for the appropriate claim/auth boundary.
+No configuration commit, network control, radio control, or secret-read endpoint is exposed before login/authorization middleware exists.
 
 ## Current implementation status
 
 - [x] Radio identity input/normalized model.
 - [x] Callsign, DMR ID, and ESSID server-side validation.
 - [x] `POST /api/v1/setup/identity/validate`.
-- [x] Unit/API tests for normalization, invalid fields, JSON contract, and method restrictions.
-- [x] Installed Pi 5 validation of the identity endpoint and HTTP behavior.
+- [x] Installed Pi 5 validation of identity/API behavior.
 - [x] Durable known-good configuration repository implementation.
 - [x] Atomic persistent storage and rollback/recovery unit tests.
 - [x] Configuration-store test suite, full Go suite, vet, and build passed on Pi 5.
-- [x] Daemon-owned setup-state model.
-- [x] Startup load of known-good configuration and explicit recovery/error state.
-- [x] Read-only `GET /api/v1/setup/status` plus API tests.
-- [ ] Installed-appliance runtime exercise of missing/loaded/recovered setup status.
-- [ ] One-time claim flow.
-- [ ] Administrator credential/session implementation.
+- [x] Daemon-owned setup-state model and startup load/recovery state.
+- [x] Installed Pi 5 runtime exercise of missing/loaded/recovered/missing configuration state.
+- [x] One-time claim-code generation and fail-closed security initialization.
+- [x] First-admin persistent password-verifier format using standard-library PBKDF2-HMAC-SHA256.
+- [x] `POST /api/v1/setup/claim` with one-time semantics and opaque HttpOnly session cookie.
+- [x] `GET /api/v1/auth/session` for read-only current-session inspection.
+- [x] Local `sudo ywd-dmr claim-code` maintenance command.
+- [ ] Installed-appliance exercise of one-time claim, code deletion, claimed restart, and session behavior.
+- [ ] Administrator password login after restart plus throttling.
 - [ ] Observer / Operator / Admin middleware and authorization tests.
 - [ ] Protected configuration validate/test/commit API.
 - [ ] WebUI first-run wizard.
