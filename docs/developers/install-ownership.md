@@ -26,6 +26,18 @@ A corrupted or hand-edited manifest must never turn into `rm -rf` against an arb
 
 Local/user vocoder plugins belong under `/var/lib/ywd-dmr/plugins` so normal core updates and normal software-only uninstall do not overwrite or delete them.
 
+## Protected configuration versus public runtime metadata
+
+YWD-DMR deliberately separates information that may eventually contain credentials from harmless information local tools need to display.
+
+`/etc/ywd-dmr/ywd-dmr.env` is protected daemon configuration. It is owned by `root:ywd-dmr` with mode `0640`. Future BrandMeister credentials, API tokens, and other secrets must never be moved into a world-readable file merely to make a helper command convenient.
+
+`/etc/ywd-dmr/runtime.conf` contains only non-sensitive runtime metadata needed by local user-facing tools. The initial file contains the configured listen address/port and is owned by `root:root` with mode `0644`.
+
+The `ywd-dmr` maintenance command reads `runtime.conf` for commands such as `ywd-dmr url` and `ywd-dmr diagnose`. This lets an ordinary local user inspect the appliance without gaining read access to protected daemon configuration.
+
+Installer rollback must restore both files together so the maintenance CLI never advertises a different listener from the daemon that was restored.
+
 ## Shared packages are never owned
 
 If YWD-DMR installs or depends on a distribution package, that does **not** make the package YWD-DMR-owned. The uninstaller must not automatically remove packages such as networking tools, audio libraries, Avahi, Git, or system runtimes because other applications may depend on them.
