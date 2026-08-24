@@ -73,11 +73,11 @@ The first on-air milestone is successful when a user can install YWD-DMR, finish
 
 ## Current install-test focus
 
-Before DMR/network work grows, exercise the `dev` appliance workflow on a real Linux host:
+Before DMR/network work grows, exercise the `dev` appliance workflow on real Linux hosts:
 
 1. [x] fresh install on the default port 8989;
 2. [x] occupied-port behavior for preserved configuration;
-3. [ ] service restart and boot behavior;
+3. [ ] service restart and boot behavior — deferred to a Raspberry Pi 5 running a fresh OS image rather than rebooting the existing Ubuntu test host;
 4. [x] branded WebUI and versioned documentation delivery;
 5. [x] UFW-active LAN install with an installer-created managed rule;
 6. [x] UFW-active LAN install with an equivalent pre-existing rule that remains user-owned;
@@ -111,6 +111,8 @@ The installer-created-rule test exposed a UFW compatibility bug: the first imple
 
 A later test used `command -v ywd-dmr` immediately after uninstall and reported a possible remaining CLI. Because Bash can retain the old command path in its per-shell hash table even after `/usr/local/bin/ywd-dmr` is deleted, post-uninstall verification now checks the physical path directly and documents `hash -r` for clearing the interactive shell cache. The physical-path check and authoritative uninstall verifier both passed.
 
-Remaining appliance tests are restart/boot persistence, full purge with safety backup, a clean reinstall after purge, and the fresh-install free-port suggestion path after purge.
+Boot persistence will be tested on a Raspberry Pi 5 with a freshly installed OS. That is preferable to rebooting the existing Ubuntu test host because it also exercises YWD-DMR on a clean ARM64 machine without relying on state accumulated during earlier development tests.
+
+Remaining appliance tests are Pi 5 restart/boot persistence, full purge with safety backup, a clean reinstall after purge, and the fresh-install free-port suggestion path after purge.
 
 Problems found here should be fixed before promoting this installer foundation to `main`.
