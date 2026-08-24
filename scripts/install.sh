@@ -19,6 +19,7 @@ DATA_DIR=/var/lib/ywd-dmr
 LOG_DIR=/var/log/ywd-dmr
 BACKUP_DIR=/var/backups/ywd-dmr
 ENV_FILE="$CONFIG_DIR/ywd-dmr.env"
+PUBLIC_RUNTIME_FILE="$CONFIG_DIR/runtime.conf"
 OWNED_USER_MARKER="$CONFIG_DIR/install-owned-user"
 UNIT_FILE=/etc/systemd/system/ywd-dmrd.service
 CLI_FILE=/usr/local/bin/ywd-dmr
@@ -182,9 +183,14 @@ RELEASE_DIR="$APP_DIR/releases/$RELEASE_ID"
 OLD_CURRENT=""
 [ -L "$APP_DIR/current" ] && OLD_CURRENT="$(readlink -f "$APP_DIR/current" || true)"
 OLD_ENV_TMP=""
+OLD_RUNTIME_TMP=""
 if [ -f "$ENV_FILE" ]; then
   OLD_ENV_TMP="$(mktemp)"
   cp -a "$ENV_FILE" "$OLD_ENV_TMP"
+fi
+if [ -f "$PUBLIC_RUNTIME_FILE" ]; then
+  OLD_RUNTIME_TMP="$(mktemp)"
+  cp -a "$PUBLIC_RUNTIME_FILE" "$OLD_RUNTIME_TMP"
 fi
 
 # Never hijack an unrelated pre-existing account named ywd-dmr.
@@ -215,14 +221,25 @@ fi
 ln -sfn "$RELEASE_DIR" "$APP_DIR/current.new"
 mv -Tf "$APP_DIR/current.new" "$APP_DIR/current"
 
+# Protected daemon configuration may contain secrets later and is intentionally
+# not readable by normal local users.
 cat > "$ENV_FILE" <<EOF
-# Managed by the YWD-DMR installer. Advanced users may edit carefully.
+# Managed by the YWD-DMR installer. Protected daemon configuration.
 YWD_DMR_LISTEN=$BIND_ADDR:$PORT
 YWD_DMR_WEB_ROOT=/opt/ywd-dmr/current/web
 YWD_DMR_DOCS_ROOT=/opt/ywd-dmr/current/docs
 EOF
 chown root:"$SERVICE_USER" "$ENV_FILE"
 chmod 0640 "$ENV_FILE"
+
+# Public runtime metadata contains no passwords/tokens. The maintenance CLI can
+# safely read this without sudo to show the dashboard URL and run diagnostics.
+cat > "$PUBLIC_RUNTIME_FILE" <<EOF
+# Managed by the YWD-DMR installer. Non-sensitive runtime metadata only.
+YWD_DMR_LISTEN=$BIND_ADDR:$PORT
+EOF
+chown root:root "$PUBLIC_RUNTIME_FILE"
+chmod 0644 "$PUBLIC_RUNTIME_FILE"
 
 install -m 0644 "$ROOT/packaging/systemd/ywd-dmrd.service" "$UNIT_FILE"
 install -m 0755 "$ROOT/scripts/ywd-dmr" "$CLI_FILE"
@@ -259,15 +276,18 @@ if [ "$INSTALL_OK" -ne 1 ]; then
     ln -sfn "$OLD_CURRENT" "$APP_DIR/current.new"
     mv -Tf "$APP_DIR/current.new" "$APP_DIR/current"
     if [ -n "$OLD_ENV_TMP" ] && [ -f "$OLD_ENV_TMP" ]; then cp -a "$OLD_ENV_TMP" "$ENV_FILE"; fi
+    if [ -n "$OLD_RUNTIME_TMP" ] && [ -f "$OLD_RUNTIME_TMP" ]; then cp -a "$OLD_RUNTIME_TMP" "$PUBLIC_RUNTIME_FILE"; fi
     systemctl enable --now ywd-dmrd.service >/dev/null 2>&1 || true
+  else
+    rm -f -- "$PUBLIC_RUNTIME_FILE"
   fi
   log ""
   log "Recent service log:"
   journalctl -u ywd-dmrd.service -n 40 --no-pager 2>/dev/null || true
-  rm -f -- "$OLD_ENV_TMP" 2>/dev/null || true
+  rm -f -- "$OLD_ENV_TMP" "$OLD_RUNTIME_TMP" 2>/dev/null || true
   exit 1
 fi
-rm -f -- "$OLD_ENV_TMP" 2>/dev/null || true
+rm -f -- "$OLD_ENV_TMP" "$OLD_RUNTIME_TMP" 2>/dev/null || true
 
 HOST_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 log ""
