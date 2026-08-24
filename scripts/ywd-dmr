@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -u
+
+ENV_FILE=/etc/ywd-dmr/ywd-dmr.env
+SERVICE=ywd-dmrd.service
+
+usage() {
+  cat <<'EOF'
+YWD-DMR maintenance command
+
+Usage:
+  ywd-dmr status
+  ywd-dmr diagnose
+  ywd-dmr logs
+  ywd-dmr url
+  sudo ywd-dmr start|stop|restart
+  sudo ywd-dmr uninstall [uninstaller options]
+EOF
+}
+
+listen_value() {
+  [ -f "$ENV_FILE" ] || return 1
+  sed -n 's/^YWD_DMR_LISTEN=//p' "$ENV_FILE" | tail -1
+}
+
+health_url() {
+  local listen port
+  listen="$(listen_value 2>/dev/null || printf '127.0.0.1:8989')"
+  port="${listen##*:}"
+  printf 'http://127.0.0.1:%s/api/v1/health\n' "$port"
+}
+
+case "${1:-}" in
+  status)
+    systemctl --no-pager --full status "$SERVICE"
+    ;;
+  start|stop|restart)
+    [ "$(id -u)" -eq 0 ] || { echo "Run this command with sudo." >&2; exit 1; }
+    systemctl "$1" "$SERVICE"
+    ;;
+  logs)
+    journalctl -u "$SERVICE" -n 100 --no-pager
+    ;;
+  url)
+    listen="$(listen_value 2>/dev/null || printf '127.0.0.1:8989')"
+    host="${listen%:*}"
+    port="${listen##*:}"
+    if [ "$host" = 0.0.0.0 ]; then
+      ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+      [ -n "$ip" ] && host="$ip"
+    fi
+    printf 'http://%s:%s/\n' "$host" "$port"
+    ;;
+  diagnose)
+    echo "YWD-DMR basic diagnostics"
+    echo "========================="
+    echo "Listener: $(listen_value 2>/dev/null || echo 'not configured')"
+    if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
+      echo "Service:  active"
+    else
+      echo "Service:  NOT ACTIVE"
+    fi
+    if command -v curl >/dev/null 2>&1 && curl -fsS --max-time 3 "$(health_url)"; then
+      echo
+      echo "Health:   API responded"
+    else
+      echo "Health:   API did not respond"
+    fi
+    echo "Current:  $(readlink -f /opt/ywd-dmr/current 2>/dev/null || echo 'not installed')"
+    echo "Previous: $(readlink -f /opt/ywd-dmr/previous 2>/dev/null || echo 'none')"
+    ;;
+  uninstall)
+    shift
+    [ "$(id -u)" -eq 0 ] || { echo "Run uninstall with sudo." >&2; exit 1; }
+    exec /usr/local/sbin/ywd-dmr-uninstall "$@"
+    ;;
+  -h|--help|help|"") usage ;;
+  *) echo "Unknown command: $1" >&2; usage; exit 2 ;;
+esac
