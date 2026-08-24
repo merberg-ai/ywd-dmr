@@ -21,7 +21,7 @@ Mutating radio controls are intentionally absent until authentication, authoriza
 GET /api/v1/setup/status
 ```
 
-This is a read-only daemon-owned setup summary. It is intentionally safe to expose during the current development phase because it does not return the stored station identity, credentials, tokens, passwords, or other protected settings.
+This is a read-only daemon-owned setup summary. It never returns the stored station identity, credentials, tokens, passwords, or other protected settings.
 
 A new unclaimed installation with no readable known-good configuration reports:
 
@@ -38,19 +38,80 @@ A new unclaimed installation with no readable known-good configuration reports:
 }
 ```
 
-When a valid known-good snapshot is loaded, `configuration.state` becomes `loaded`, `identity_configured` becomes `true`, and `revision` reports the daemon-owned configuration revision.
-
-If startup cannot use the current snapshot but successfully recovers the previous rollback snapshot, `configuration.state` is `recovered` and `recovered` is `true`. The daemon also logs a warning so recovery is not silently treated as normal operation.
-
-If neither current nor previous configuration can be read safely, `configuration.state` is `error`. Internal filesystem/decoder details are logged server-side rather than returned through this public status object.
-
-Until one-time claim/authentication is implemented, `claimed` remains `false`, `stage` remains `unclaimed`, and `next_step` remains `claim` even if an identity snapshot exists from development testing. The daemon—not the WebUI—will own those transitions when claim state lands.
+Configuration state may be `missing`, `loaded`, `recovered`, or `error`. After the installation is claimed, daemon-owned `stage`/`next_step` values move to `claimed`/`identity` when identity is missing, or `identity_complete`/`network` when a known-good identity is already present.
 
 Other methods return HTTP `405` with `Allow: GET`.
 
-## Setup validation
+## One-time installation claim
 
-Phase 2 begins with server-side validation before persistence or authentication is added.
+```text
+POST /api/v1/setup/claim
+Content-Type: application/json
+```
+
+This is the one deliberate unauthenticated mutating setup operation. A fresh appliance can be claimed only by presenting the high-entropy bootstrap code retrieved locally from the appliance with `sudo ywd-dmr claim-code`.
+
+Request:
+
+```json
+{
+  "claim_code": "YOUR-ONE-TIME-CODE",
+  "username": "sysop",
+  "password": "choose a long administrator password"
+}
+```
+
+A successful claim returns HTTP `201` with non-secret administrator/session metadata:
+
+```json
+{
+  "claimed": true,
+  "username": "sysop",
+  "role": "admin",
+  "expires_at": "..."
+}
+```
+
+The opaque session token is set only in the `ywd_dmr_session` HttpOnly cookie and is never returned in JSON. The cookie is `SameSite=Strict`; on HTTPS requests it is also marked `Secure`. Current LAN-test HTTP cannot use the Secure cookie flag, which is one reason this development build must not be publicly exposed.
+
+Claim failure behavior:
+
+- malformed/unknown JSON -> HTTP `400`;
+- invalid username/password policy -> HTTP `400` with field errors;
+- wrong claim code -> HTTP `403` with a generic claim-failed response;
+- installation already claimed -> HTTP `409`;
+- internal durable-state failure -> HTTP `500` without leaking internal details.
+
+A successful durable claim consumes the bootstrap path. Reusing the claim request returns `409`, and daemon startup never regenerates a claim code merely because the old plaintext code is gone.
+
+## Current session inspection
+
+```text
+GET /api/v1/auth/session
+```
+
+This endpoint reports whether the request carries a currently valid in-memory session cookie. Unauthenticated/expired/missing-cookie requests return HTTP `200` with:
+
+```json
+{
+  "authenticated": false
+}
+```
+
+A valid session returns only:
+
+```json
+{
+  "authenticated": true,
+  "username": "sysop",
+  "role": "admin",
+  "expires_at": "..."
+}
+```
+
+The token itself is never echoed. Current sessions are intentionally memory-only, so daemon restart invalidates them. Password login after restart, throttling, logout, and authorization middleware are the next security slice.
+
+## Setup validation
 
 ### Validate station identity
 
@@ -93,7 +154,7 @@ Current validation rules:
 - Base DMR ID must be from 1 through 9999999.
 - ESSID must be from 0 through 99.
 
-This endpoint is deliberately **non-mutating**. It does not save configuration, create a user/session, connect to BrandMeister, or control/transmit radio traffic. It is temporarily available before authentication because it only validates caller-supplied non-secret values and changes no daemon state.
+This endpoint is deliberately **non-mutating**. It does not save configuration, connect to BrandMeister, or control/transmit radio traffic.
 
 See [Setup and Security Phase](../developers/setup-security-phase.md) for the ordering of persistence, claim/auth, roles, and setup commits.
 
