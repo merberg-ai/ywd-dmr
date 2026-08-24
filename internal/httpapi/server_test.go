@@ -33,7 +33,7 @@ func TestMutatingMethodRejected(t *testing.T) {
 
 func TestIdentityValidationEndpoint(t *testing.T) {
 	h := New(core.NewState("test", "abc", "test"), "does-not-exist", "does-not-exist")
-	body := `{"callsign":"  kj6ywd  ","dmr_id":3196104,"essid":1}`
+	body := `{"callsign":"  n0call  ","dmr_id":1234567,"essid":1}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/setup/identity/validate", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
@@ -50,8 +50,8 @@ func TestIdentityValidationEndpoint(t *testing.T) {
 	if !result.Valid {
 		t.Fatalf("expected valid identity, got %+v", result.Errors)
 	}
-	if result.Normalized.Callsign != "KJ6YWD" {
-		t.Fatalf("expected normalized callsign KJ6YWD, got %q", result.Normalized.Callsign)
+	if result.Normalized.Callsign != "N0CALL" {
+		t.Fatalf("expected normalized callsign N0CALL, got %q", result.Normalized.Callsign)
 	}
 }
 
@@ -80,7 +80,7 @@ func TestIdentityValidationReturnsFieldErrors(t *testing.T) {
 
 func TestIdentityValidationRejectsUnknownJSONFields(t *testing.T) {
 	h := New(core.NewState("test", "abc", "test"), "does-not-exist", "does-not-exist")
-	body := `{"callsign":"KJ6YWD","dmr_id":3196104,"essid":1,"surprise":true}`
+	body := `{"callsign":"N0CALL","dmr_id":1234567,"essid":1,"surprise":true}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/setup/identity/validate", strings.NewReader(body))
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
