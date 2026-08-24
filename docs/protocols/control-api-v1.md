@@ -30,8 +30,8 @@ Request:
 
 ```json
 {
-  "callsign": "KJ6YWD",
-  "dmr_id": 3196104,
+  "callsign": "N0CALL",
+  "dmr_id": 1234567,
   "essid": 1
 }
 ```
@@ -42,8 +42,8 @@ Successful transport with valid fields:
 {
   "valid": true,
   "normalized": {
-    "callsign": "KJ6YWD",
-    "dmr_id": 3196104,
+    "callsign": "N0CALL",
+    "dmr_id": 1234567,
     "essid": 1
   },
   "errors": []
