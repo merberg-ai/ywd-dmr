@@ -1,0 +1,23 @@
+# Build output
+/dist/
+/bin/
+ywd-dmrd
+
+# Local runtime state
+/data/
+*.db
+*.db-shm
+*.db-wal
+*.log
+
+# Local configuration/secrets
+.env
+.env.*
+config.local.*
+secrets.*
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

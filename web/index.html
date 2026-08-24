@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>YWD-DMR</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div><span class="mark">YWD</span><strong>-DMR</strong></div>
+    <span id="health" class="pill">CHECKING</span>
+  </header>
+  <main>
+    <section class="hero">
+      <p class="eyebrow">RADIO-LESS DMR APPLIANCE</p>
+      <h1>YWD-DMR</h1>
+      <p>API-first DMR for Raspberry Pi and Linux. This is the initial development dashboard scaffold.</p>
+    </section>
+    <section class="grid">
+      <article class="card"><h2>Core</h2><div class="value" id="core-state">—</div><p id="version">Loading…</p></article>
+      <article class="card"><h2>Network</h2><div class="value" id="network-state">—</div><p>BrandMeister backend comes next.</p></article>
+      <article class="card"><h2>Vocoder</h2><div class="value" id="vocoder-state">—</div><p>No-vocoder mode is valid by design.</p></article>
+      <article class="card"><h2>TX / RX</h2><div class="value">DISABLED</div><p>PTT stays disabled until authentication and TX leases exist.</p></article>
+    </section>
+    <section class="card help">
+      <h2>Help & Documentation</h2>
+      <p>Documentation ships with the installed version and is maintained with every project change.</p>
+      <a href="/docs/README.md">Open documentation</a>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
