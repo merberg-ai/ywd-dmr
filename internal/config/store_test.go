@@ -142,7 +142,7 @@ func TestFileStoreRecoversFromCorruptCurrent(t *testing.T) {
 func TestFileStoreRejectsUnsupportedStoredSchema(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, knownGoodFilename)
-	data := []byte(`{"schema":99}`)
+	data := []byte(`{"schema":99,"revision":1,"identity":{"callsign":"N0CALL","dmr_id":1234567,"essid":1}}`)
 	data = []byte(strings.ReplaceAll(string(data), `\"`, `"`))
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatalf("write test config: %v", err)
