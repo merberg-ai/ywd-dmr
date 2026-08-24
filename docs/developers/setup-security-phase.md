@@ -28,23 +28,35 @@ POST /api/v1/setup/identity/validate
 
 This endpoint is deliberately non-mutating. It does not save configuration, create an account, connect to a DMR network, or transmit anything.
 
+The first slice was exercised on the installed Raspberry Pi 5 appliance. A valid lowercase/space-padded callsign normalized correctly, invalid callsign/DMR-ID/ESSID values returned three field errors, an unknown JSON field returned HTTP 400, and GET against the POST-only endpoint returned HTTP 405 with `Allow: POST`.
+
 ### 2. Known-good configuration store
 
-Add a daemon-owned configuration repository with explicit operations equivalent to:
+The daemon now has a small durable configuration store with operations equivalent to:
 
 ```text
 load current known-good
 validate candidate
-test candidate
 commit candidate
-rollback/reject candidate
+recover from previous snapshot
 ```
 
 The persistent store belongs under `/var/lib/ywd-dmr/`, which is writable by the restricted `ywd-dmr` service account. The protected listener/service environment under `/etc/ywd-dmr/` remains separate.
 
-The storage implementation must be suitable for the Raspberry Pi Zero / ARMv6 baseline. A storage dependency is not accepted merely because it works on a Pi 5; build size, memory use, startup cost, cross-compilation, and recovery behavior must be considered.
+The first implementation deliberately uses atomic JSON snapshots and only the Go standard library. It keeps:
 
-Secrets must never be returned by a normal configuration read API after storage.
+```text
+/var/lib/ywd-dmr/known-good.json
+/var/lib/ywd-dmr/known-good.previous.json
+```
+
+A candidate is normalized and validated before any durable state changes. On later commits, the previous known-good value is written to the rollback snapshot before the current snapshot is atomically replaced. If the current snapshot is unreadable or invalid, load may recover from a valid previous snapshot and explicitly report that recovery state.
+
+See [Known-good Configuration Store](configuration-store.md) for the schema, atomic-write rules, rollback behavior, and security boundary.
+
+The storage implementation remains suitable for the Raspberry Pi Zero / ARMv6 baseline: no database runtime is required for this small settings document, and the implementation cross-compiles with the rest of the standard-library-only daemon.
+
+Secrets must never be returned by a normal configuration read API after storage. No BrandMeister or administrator secret is stored by this slice.
 
 ### 3. One-time claim and administrator authentication
 
@@ -96,16 +108,18 @@ The WebUI then becomes a client of the same setup APIs used by future Android/CL
 
 The current LAN test dashboard remains unauthenticated. Do **not** router-forward or publicly expose it.
 
-The initial identity-validation endpoint is temporarily callable without authentication because it only normalizes user-supplied non-secret data and changes no state. Any endpoint that stores configuration, creates sessions/accounts, reveals protected information, or controls radio/network state must wait for the appropriate claim/auth boundary.
+The identity-validation endpoint is temporarily callable without authentication because it only normalizes user-supplied non-secret data and changes no state. The new file store is not exposed through a mutating HTTP endpoint yet. Any endpoint that stores configuration, creates sessions/accounts, reveals protected information, or controls radio/network state must wait for the appropriate claim/auth boundary.
 
-## First implementation slice
+## Current implementation status
 
 - [x] Radio identity input/normalized model.
 - [x] Callsign, DMR ID, and ESSID server-side validation.
 - [x] `POST /api/v1/setup/identity/validate`.
 - [x] Unit/API tests for normalization, invalid fields, JSON contract, and method restrictions.
-- [ ] Durable known-good configuration repository interface.
-- [ ] Persistent storage implementation and recovery tests.
+- [x] Installed Pi 5 validation of the identity endpoint and HTTP behavior.
+- [x] Durable known-good configuration repository implementation.
+- [x] Atomic persistent storage and rollback/recovery unit tests.
+- [ ] Installed-appliance exercise of the configuration store once daemon wiring exists.
 - [ ] Setup-state model.
 - [ ] One-time claim flow.
 - [ ] Administrator credential/session implementation.
