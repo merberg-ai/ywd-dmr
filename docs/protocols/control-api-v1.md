@@ -15,6 +15,39 @@ Currently implemented and read-only:
 
 Mutating radio controls are intentionally absent until authentication, authorization, PTT leases, and TX timeout behavior exist.
 
+## Setup status
+
+```text
+GET /api/v1/setup/status
+```
+
+This is a read-only daemon-owned setup summary. It is intentionally safe to expose during the current development phase because it does not return the stored station identity, credentials, tokens, passwords, or other protected settings.
+
+A new unclaimed installation with no readable known-good configuration reports:
+
+```json
+{
+  "claimed": false,
+  "stage": "unclaimed",
+  "next_step": "claim",
+  "configuration": {
+    "state": "missing",
+    "identity_configured": false,
+    "recovered": false
+  }
+}
+```
+
+When a valid known-good snapshot is loaded, `configuration.state` becomes `loaded`, `identity_configured` becomes `true`, and `revision` reports the daemon-owned configuration revision.
+
+If startup cannot use the current snapshot but successfully recovers the previous rollback snapshot, `configuration.state` is `recovered` and `recovered` is `true`. The daemon also logs a warning so recovery is not silently treated as normal operation.
+
+If neither current nor previous configuration can be read safely, `configuration.state` is `error`. Internal filesystem/decoder details are logged server-side rather than returned through this public status object.
+
+Until one-time claim/authentication is implemented, `claimed` remains `false`, `stage` remains `unclaimed`, and `next_step` remains `claim` even if an identity snapshot exists from development testing. The daemon—not the WebUI—will own those transitions when claim state lands.
+
+Other methods return HTTP `405` with `Allow: GET`.
+
 ## Setup validation
 
 Phase 2 begins with server-side validation before persistence or authentication is added.
