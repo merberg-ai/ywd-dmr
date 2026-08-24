@@ -1,30 +1,59 @@
 # Safely Uninstalling YWD-DMR
 
-YWD-DMR is designed to be removable without damaging the rest of the Linux system. The uninstaller must only remove files, services, users, and directories that belong to YWD-DMR.
+YWD-DMR is designed to be removable without damaging the rest of the Linux system. The uninstaller removes only paths/services/accounts that the YWD-DMR installer owns. It does **not** uninstall shared packages such as Git, Go, ALSA/PipeWire components, Avahi, system libraries, nginx, BPQ, or anything else another application may use.
 
-It must **not** remove shared packages such as Git, Go, ALSA/PipeWire components, Avahi, system libraries, or anything else that another program may use.
+The development appliance installer installs the safe uninstaller at:
 
-## Normal removal
+```text
+/usr/local/sbin/ywd-dmr-uninstall
+```
 
-During development, run:
+and exposes it through the friendlier maintenance command.
+
+## Normal removal — keep your YWD-DMR data
+
+```bash
+sudo ywd-dmr uninstall
+```
+
+This removes:
+
+- the installed YWD-DMR application releases;
+- the `ywd-dmrd.service` systemd unit;
+- the maintenance command;
+- the installed uninstaller helper.
+
+It preserves:
+
+- `/etc/ywd-dmr` configuration;
+- `/var/lib/ywd-dmr` state and locally installed vocoder plugins;
+- `/var/log/ywd-dmr` logs;
+- `/var/backups/ywd-dmr` backups;
+- the restricted `ywd-dmr` service account, because preserved data still belongs to that account.
+
+This is the normal choice when you are testing an install/uninstall/reinstall cycle.
+
+From a source checkout, the equivalent command is:
 
 ```bash
 sudo bash scripts/uninstall.sh
 ```
 
-The normal mode removes the YWD-DMR application and service while preserving your settings, local vocoder plugins, history, and backups. This is the safest choice if you may reinstall later.
-
-The finished appliance will expose the same operation through the WebUI and the `ywd-dmr` maintenance command so normal users will not need to remember the script name.
-
-## Full removal
-
-To remove YWD-DMR configuration, local vocoder plugins, history, logs, and YWD-DMR-managed backups too:
+## Full removal — purge YWD-DMR data too
 
 ```bash
-sudo bash scripts/uninstall.sh --purge-data
+sudo ywd-dmr uninstall --purge-data
 ```
 
-For safety, this creates one final backup outside the YWD-DMR data directories before anything is purged. The uninstaller prints the exact backup filename when it finishes.
+This removes the application plus YWD-DMR configuration, local/user vocoder plugins, state/history, logs, and YWD-DMR-managed backups.
+
+Before purging, the uninstaller creates one final protected archive outside the normal YWD-DMR directory tree, for example:
+
+```text
+/var/backups/ywd-dmr-uninstall-20260824-070000.tar.gz
+```
+
+If that safety backup fails, the purge stops before removing the persistent data.
 
 A full purge requires typing:
 
@@ -32,48 +61,57 @@ A full purge requires typing:
 REMOVE YWD-DMR
 ```
 
-This is intentional. A single accidental click or pasted command should not silently erase a station configuration or a locally built vocoder plugin.
+This is deliberate. An accidental click or pasted command should not silently erase a station configuration or a locally built vocoder plugin.
 
 ## Absolutely no retained backup
 
-Advanced users who really want no YWD-DMR data retained may use:
+Advanced/test use only:
 
 ```bash
-sudo bash scripts/uninstall.sh --purge-data --no-backup
+sudo ywd-dmr uninstall --purge-data --no-backup
 ```
 
-Use this only when you are certain you do not need the configuration or local plugins again.
+This is the cleanest possible removal and is useful when validating that a fresh install really starts from scratch.
 
 ## Preview without changing anything
 
-To see what the uninstaller would do:
-
 ```bash
-sudo bash scripts/uninstall.sh --purge-data --dry-run
+sudo ywd-dmr uninstall --purge-data --dry-run
 ```
 
 Nothing is deleted in dry-run mode.
 
 ## What the uninstaller is allowed to remove
 
-The initial installation layout reserves these YWD-DMR-owned locations:
+The allowlist currently contains only YWD-DMR-owned locations:
 
-- `/opt/ywd-dmr` — application releases
-- `/etc/ywd-dmr` — system configuration
-- `/var/lib/ywd-dmr` — database, state, and user/local plugins
-- `/var/log/ywd-dmr` — logs
-- `/var/backups/ywd-dmr` — YWD-DMR-managed backups
-- `/etc/systemd/system/ywd-dmrd.service` — core daemon service
-- `/etc/systemd/system/ywd-dmrd.service.d` — YWD-DMR service overrides
-- `/usr/local/bin/ywd-dmr` — maintenance command
-- `/usr/local/sbin/ywd-dmr-uninstall` — installed uninstaller helper
+- `/opt/ywd-dmr`
+- `/etc/ywd-dmr`
+- `/var/lib/ywd-dmr`
+- `/var/log/ywd-dmr`
+- `/var/backups/ywd-dmr`
+- `/etc/systemd/system/ywd-dmrd.service`
+- `/etc/systemd/system/ywd-dmrd.service.d`
+- `/usr/local/bin/ywd-dmr`
+- `/usr/local/sbin/ywd-dmr-uninstall`
 
-The script contains an allowlist and refuses to recursively remove an unexpected directory.
+The script refuses to recursively remove an unexpected directory.
 
-## Service account safety
+## Service-account safety
 
-A future production installer may create a dedicated `ywd-dmr` service account. The uninstaller may remove that account only when an installer ownership marker exists and the account still matches the restricted service-account profile created by YWD-DMR. If it has been changed into a normal user account, the uninstaller leaves it alone.
+The installer creates the restricted system account `ywd-dmr` only when that name is free. If an unrelated account named `ywd-dmr` already exists, installation stops rather than hijacking it.
 
-## Adding new installed files later
+A root-owned marker in `/etc/ywd-dmr/install-owned-user` records that the installer created the service account. During a full purge, the uninstaller removes the account only when that marker exists **and** the account still has the expected restricted home/shell profile. If the profile has been changed, the account is left alone.
 
-Whenever development adds another system path, service, helper, or persistent directory, the installer ownership documentation and uninstall behavior must be updated in the **same change**. See [Installation Ownership](../developers/install-ownership.md).
+## Suggested install/uninstall test
+
+1. Install with `sudo ./scripts/install.sh` (or `--lan-test`).
+2. Run `sudo ./scripts/verify-install.sh`.
+3. Run `sudo ywd-dmr uninstall` and confirm the service/application are gone while `/etc/ywd-dmr` and `/var/lib/ywd-dmr` remain.
+4. Reinstall and confirm the preserved listener/config returns.
+5. Run `sudo ywd-dmr uninstall --purge-data` and confirm the final safety backup is printed.
+6. For an absolutely clean test, use `--purge-data --no-backup` only after you no longer need the safety archive.
+
+## Adding installed files later
+
+Whenever development adds another system path, service, helper, account, or persistent directory, the installer ownership documentation and uninstall behavior must be updated in the **same change**. See [Installation Ownership](../developers/install-ownership.md).
