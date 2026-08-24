@@ -82,6 +82,13 @@ func (s *State) SetupStatus() SetupStatus {
 	return s.setup
 }
 
+func (s *State) SetClaimed(claimed bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.setup.Claimed = claimed
+	s.recalculateSetupStageLocked()
+}
+
 func (s *State) SetKnownGoodConfiguration(revision uint64, recovered bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -91,6 +98,7 @@ func (s *State) SetKnownGoodConfiguration(revision uint64, recovered bool) {
 		IdentityConfigured: true,
 		Recovered:          recovered,
 	}
+	s.recalculateSetupStageLocked()
 }
 
 func (s *State) SetConfigurationLoadError() {
@@ -101,6 +109,27 @@ func (s *State) SetConfigurationLoadError() {
 		IdentityConfigured: false,
 		Recovered:          false,
 	}
+	s.recalculateSetupStageLocked()
+}
+
+func (s *State) recalculateSetupStageLocked() {
+	if !s.setup.Claimed {
+		s.setup.Stage = "unclaimed"
+		s.setup.NextStep = "claim"
+		return
+	}
+	if s.setup.Configuration.State == "error" {
+		s.setup.Stage = "configuration_error"
+		s.setup.NextStep = "repair"
+		return
+	}
+	if s.setup.Configuration.IdentityConfigured {
+		s.setup.Stage = "identity_complete"
+		s.setup.NextStep = "network"
+		return
+	}
+	s.setup.Stage = "claimed"
+	s.setup.NextStep = "identity"
 }
 
 func (s *State) Capabilities() map[string]any {
