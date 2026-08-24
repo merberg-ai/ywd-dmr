@@ -9,6 +9,7 @@ The first on-air milestone is successful when a user can install YWD-DMR, finish
 - [x] Read-only Control API scaffold
 - [x] Responsive WebUI scaffold
 - [x] Pi Zero/ARMv6 CI build target
+- [x] Safe uninstall scaffold and installation-ownership rules
 - [ ] Authentication and one-time first-run claim
 - [ ] Admin / Operator / Observer authorization model
 - [ ] Structured logging and support bundle
@@ -51,6 +52,7 @@ The first on-air milestone is successful when a user can install YWD-DMR, finish
 - [ ] Guided WebUI first-run wizard
 - [ ] mDNS `ywd-dmr.local`
 - [ ] systemd unit and maintenance CLI
+- [ ] WebUI/CLI uninstall and repair workflow using the safe removal rules
 - [ ] GitHub release updater
 - [ ] protected pre-update backups
 - [ ] config migrations
