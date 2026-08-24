@@ -4,7 +4,7 @@ YWD-DMR does not treat every submitted settings form as active configuration. Th
 
 ## Where it lives
 
-The development store uses files under the daemon-owned state directory, planned as:
+The development store uses files under the daemon-owned state directory:
 
 ```text
 /var/lib/ywd-dmr/known-good.json
@@ -14,6 +14,8 @@ The development store uses files under the daemon-owned state directory, planned
 These files are different from `/etc/ywd-dmr/ywd-dmr.env`. The `/etc` file contains service/bootstrap settings such as the frontend listener. Radio/network/audio configuration belongs to daemon-managed persistent state under `/var/lib/ywd-dmr/`.
 
 The configuration snapshots are written with mode `0600`. The containing state directory remains restricted to the `ywd-dmr` service account.
+
+`ywd-dmrd` uses `/var/lib/ywd-dmr` by default and may be pointed at another state directory with `YWD_DMR_STATE_DIR` for development/test harnesses. Production appliance behavior keeps the normal state directory under `/var/lib/ywd-dmr/`.
 
 ## Current schema
 
@@ -59,13 +61,18 @@ atomic replace of current known-good snapshot
 
 The file implementation writes a temporary file in the same directory, sets restrictive permissions, writes and syncs the contents, then renames it over the destination and syncs the directory. Renaming within one filesystem gives us the atomic replacement property we need without a database dependency.
 
-## Recovery behavior
+## Startup and recovery behavior
 
-Normal startup/load uses `known-good.json`.
+On daemon startup, YWD-DMR loads `known-good.json` from the state directory.
 
-If the current file is unreadable, malformed, has an unsupported schema, or contains invalid stored identity data, the store attempts to load `known-good.previous.json` instead. When that succeeds the caller is explicitly told that recovery came from the previous snapshot; the daemon must not silently pretend everything is normal.
+If the current file is unreadable, malformed, has an unsupported schema, or contains invalid stored identity data, the store attempts to load `known-good.previous.json` instead. When that succeeds the daemon records a recovered configuration state and logs a warning; recovery is not silently treated as normal operation.
 
-If neither snapshot is usable, the store reports that there is no readable known-good configuration. Later setup-state code will turn that into a plain-language wizard/diagnostic state.
+If neither snapshot is usable, the daemon distinguishes two cases:
+
+- both snapshots absent -> configuration state is `missing`;
+- one or both snapshots exist but no usable configuration can be loaded -> configuration state is `error`.
+
+The read-only `GET /api/v1/setup/status` endpoint reports only this coarse health/state information, whether identity is configured, and the revision when available. It does not return the stored identity itself.
 
 A recovery commit must not overwrite a valid previous snapshot with the corrupt current file.
 
@@ -97,6 +104,11 @@ Implemented on `dev`:
 - rejected candidates leave current known-good state unchanged;
 - recovery load from a valid previous snapshot when current is corrupt;
 - unsupported-schema rejection;
-- unit tests using temporary directories, including file-mode and recovery checks.
+- unit tests using temporary directories, including file-mode and recovery checks;
+- daemon startup loading from the configured state directory;
+- explicit missing/loaded/recovered/error setup state;
+- read-only setup-status reporting without returning stored identity fields.
 
-The store is not yet exposed through a mutating HTTP API. That waits for setup-state and claim/auth boundaries so the current unauthenticated LAN-test dashboard cannot commit station configuration.
+The configuration-store unit suite, full Go suite, vet, and normal-user build passed on the Raspberry Pi 5 at the `2a889bb` checkpoint. The runtime startup/status wiring is the next installed-appliance exercise.
+
+The store is not exposed through a mutating HTTP API. That waits for claim/auth boundaries so the current unauthenticated LAN-test dashboard cannot commit station configuration.
