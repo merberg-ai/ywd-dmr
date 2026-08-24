@@ -11,6 +11,8 @@ The current development installer focuses on the foundation we want to prove fir
 - build/test the current source before changing the installed service;
 - check the requested listening port;
 - never steal a port from another program;
+- detect active UFW when LAN access is requested and offer a LAN-only rule;
+- never claim or remove an existing firewall rule it did not create;
 - use a dedicated restricted `ywd-dmr` service account;
 - keep application code separate from configuration/data/plugins;
 - install a hardened systemd service;
@@ -58,6 +60,18 @@ sudo ./scripts/install.sh --lan-test
 
 The installer prints the LAN address when it succeeds.
 
+If UFW is active, YWD-DMR attempts to identify the directly connected IPv4 LAN subnet. If an equivalent rule does not already exist, it asks before adding a rule limited to that subnet and the selected YWD-DMR TCP port. It does not create an `Anywhere` rule.
+
+For example, on a `192.168.1.0/24` LAN using the default port, the installer-created rule allows only:
+
+```text
+192.168.1.0/24 -> 8989/tcp
+```
+
+If a matching UFW rule already exists, YWD-DMR uses it but records it as user/system-owned so uninstall will leave it alone.
+
+See [Firewall and LAN Access](../operations/firewall.md) for the complete safety rules.
+
 **Important:** LAN test mode is temporary development behavior. Do not forward the selected port through your router, expose it to the public internet, or place the current unauthenticated build directly on a public interface. Once first-run claiming/authentication is implemented, normal LAN access can become the friendly default.
 
 ### Choose a different port
@@ -71,6 +85,22 @@ Or combine it with LAN test mode:
 ```bash
 sudo ./scripts/install.sh --port 8995 --lan-test
 ```
+
+### Firewall overrides
+
+Skip automatic firewall handling completely:
+
+```bash
+sudo ./scripts/install.sh --lan-test --no-firewall
+```
+
+For a multi-interface or unusual routing setup, override the detected UFW source subnet:
+
+```bash
+sudo ./scripts/install.sh --lan-test --ufw-source 192.168.1.0/24
+```
+
+YWD-DMR does not install or enable UFW merely because it is absent. It also does not automatically modify firewalld or an unknown firewall backend in the current development build.
 
 ## Verify the installation
 
@@ -91,6 +121,8 @@ ywd-dmr logs
 
 `ywd-dmr diagnose` and `ywd-dmr url` do not need access to passwords or future BrandMeister credentials. The installer writes only non-sensitive listener information to `/etc/ywd-dmr/runtime.conf`, which local users may read. Protected daemon configuration remains in `/etc/ywd-dmr/ywd-dmr.env` with restricted permissions.
 
+When firewall integration is recorded, `ywd-dmr diagnose` also reports whether the UFW rule is installer-managed or an existing/user-owned rule.
+
 ## What gets installed
 
 The development appliance installer uses the same layout planned for production:
@@ -101,6 +133,7 @@ The development appliance installer uses the same layout planned for production:
 /opt/ywd-dmr/previous              previous release symlink when available
 /etc/ywd-dmr/ywd-dmr.env           protected daemon configuration
 /etc/ywd-dmr/runtime.conf           non-sensitive runtime metadata
+/etc/ywd-dmr/firewall.conf          non-sensitive firewall ownership metadata, when applicable
 /etc/ywd-dmr/install-owned-user     installer ownership marker
 /var/lib/ywd-dmr/                  persistent state and user plugins
 /var/log/ywd-dmr/                  YWD-DMR log storage
@@ -112,13 +145,15 @@ The development appliance installer uses the same layout planned for production:
 
 Application files are owned by root and are read-only to the runtime service. Persistent data is owned by the restricted `ywd-dmr` account. YWD-DMR does not run as root.
 
-The protected daemon configuration is intentionally not world-readable because it will later hold credentials and tokens. Public runtime metadata must never contain secrets.
+The protected daemon configuration is intentionally not world-readable because it will later hold credentials and tokens. Public runtime and firewall metadata must never contain secrets.
 
 ## Re-running the installer
 
 Re-running the development installer is allowed. Existing YWD-DMR configuration is preserved unless you explicitly choose a new listener option. A new release directory is installed and the old `current` release becomes `previous`.
 
 The installer builds/tests first and stops the currently installed YWD-DMR service only when the replacement payload is ready. If the replacement fails its health check and a previous release exists, the installer attempts to restore the previous release and both its protected and public runtime configuration.
+
+Firewall changes occur only after the new daemon passes its health check. If the selected port or LAN changes, an installer-owned UFW rule may be replaced. Existing/user-owned firewall rules are never taken over simply because they happen to match.
 
 ## Required development tools
 
@@ -133,5 +168,7 @@ For the normal safe removal that keeps configuration/plugins for a later reinsta
 ```bash
 sudo ywd-dmr uninstall
 ```
+
+An installer-created firewall rule is removed because the service is no longer present. A rule that existed before YWD-DMR is left untouched.
 
 For a complete test cleanup, see [Safely Uninstalling YWD-DMR](../operations/uninstall.md).
