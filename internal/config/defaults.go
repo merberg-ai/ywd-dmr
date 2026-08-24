@@ -10,4 +10,8 @@ const (
 	// The appliance installer will write an explicit LAN bind after first-run
 	// security is configured and the selected port has passed its preflight.
 	DefaultListen = "127.0.0.1:8989"
+
+	// DefaultStateDir is the daemon-owned persistent state directory used by the
+	// known-good configuration store and future durable runtime state.
+	DefaultStateDir = "/var/lib/ywd-dmr"
 )
