@@ -76,7 +76,7 @@ Before DMR/network work grows, exercise the `dev` appliance workflow on a real L
 2. [ ] occupied-port behavior;
 3. [ ] service restart and boot behavior;
 4. [x] branded WebUI and versioned documentation delivery;
-5. [ ] UFW-active LAN install with an installer-created managed rule;
+5. [x] UFW-active LAN install with an installer-created managed rule;
 6. [x] UFW-active LAN install with an equivalent pre-existing rule that remains user-owned;
 7. [x] normal uninstall while preserving configuration/data;
 8. [x] reinstall using preserved configuration;
@@ -95,10 +95,12 @@ On an Ubuntu host with active UFW and existing ham-radio/network services, YWD-D
 - reinstalled from the preserved state;
 - detected an existing `192.168.1.0/24 -> 8989/tcp` UFW rule as user-owned;
 - used that rule without claiming ownership or changing it;
-- reported firewall ownership correctly through verification and diagnostics.
+- reported firewall ownership correctly through verification and diagnostics;
+- created a tagged `YWD-DMR managed LAN` UFW rule for `192.168.1.0/24 -> 8989/tcp` when no equivalent rule existed;
+- verified the installer-created rule as YWD-DMR-owned and reported it correctly through diagnostics.
 
-The installer-created-rule test exposed a UFW compatibility bug: the first implementation incorrectly used `--force` with a full `allow`/`delete allow` rule specification. The daemon remained healthy and verification correctly reported the firewall setup failure. The UFW commands were corrected to use normal full-rule syntax without `--force`.
+The installer-created-rule test exposed a UFW compatibility bug: the first implementation incorrectly used `--force` with a full `allow`/`delete allow` rule specification. The daemon remained healthy and verification correctly reported the firewall setup failure. The UFW commands were corrected to use normal full-rule syntax without `--force`, then the managed-rule installation path passed on the real host.
 
-The remaining firewall test is the inverse path: let YWD-DMR create its own tagged LAN rule successfully, then confirm normal uninstall removes only that installer-owned rule.
+The remaining firewall test is uninstall cleanup: normal uninstall must remove the tagged installer-owned rule while leaving every unrelated UFW rule untouched.
 
 Problems found here should be fixed before promoting this installer foundation to `main`.
