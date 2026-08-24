@@ -2,6 +2,15 @@
 
 YWD-DMR is being built as a small, dependable radio appliance rather than a collection of tightly coupled experiments.
 
+## Branch workflow
+
+- `dev` is the active development branch. New features, fixes, WebUI work, API changes, installer work, and documentation changes normally land there first.
+- `main` is the tested/stable branch. Do not use it as the everyday development branch.
+- Promote tested `dev` work to `main` intentionally, normally through a reviewed pull request/merge.
+- Tagged releases and the future stable appliance update channel should be based on tested `main` commits.
+
+See [docs/developers/branching-and-releases.md](docs/developers/branching-and-releases.md) for the full policy.
+
 ## Ground rules
 
 - Keep Pi Zero / ARMv6 performance in mind.
