@@ -71,13 +71,16 @@ fi
 if [ -f "$FIREWALL_META_FILE" ]; then
   FW_PROVIDER="$(meta_value YWD_DMR_FIREWALL_PROVIDER "$FIREWALL_META_FILE" 2>/dev/null || true)"
   FW_MANAGED="$(meta_value YWD_DMR_FIREWALL_MANAGED "$FIREWALL_META_FILE" 2>/dev/null || true)"
+  FW_STATUS="$(meta_value YWD_DMR_FIREWALL_STATUS "$FIREWALL_META_FILE" 2>/dev/null || printf ok)"
   FW_SOURCE="$(meta_value YWD_DMR_FIREWALL_SOURCE "$FIREWALL_META_FILE" 2>/dev/null || true)"
   FW_PORT="$(meta_value YWD_DMR_FIREWALL_PORT "$FIREWALL_META_FILE" 2>/dev/null || true)"
   FW_COMMENT="$(meta_value YWD_DMR_FIREWALL_COMMENT "$FIREWALL_META_FILE" 2>/dev/null || true)"
 
   [ "$(stat -c '%a' "$FIREWALL_META_FILE" 2>/dev/null)" = 644 ] && ok "firewall metadata mode is 0644" || fail "firewall metadata permissions are not 0644"
 
-  if [ "$FW_MANAGED" = 1 ]; then
+  if [ "$FW_STATUS" = failed ]; then
+    fail "YWD-DMR firewall setup failed for $FW_SOURCE -> $FW_PORT/tcp"
+  elif [ "$FW_MANAGED" = 1 ]; then
     if [ "$FW_PROVIDER" = ufw ] && ufw_managed_rule_present "$FW_SOURCE" "$FW_PORT" "$FW_COMMENT"; then
       ok "YWD-DMR-managed UFW rule is present for $FW_SOURCE -> $FW_PORT/tcp"
     else

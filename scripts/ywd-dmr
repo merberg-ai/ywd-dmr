@@ -48,13 +48,16 @@ health_url() {
 }
 
 firewall_summary() {
-  local provider managed source port
+  local provider managed status source port
   [ -r "$FIREWALL_META_FILE" ] || { printf 'not managed / no metadata\n'; return 0; }
   provider="$(read_value_from YWD_DMR_FIREWALL_PROVIDER "$FIREWALL_META_FILE" 2>/dev/null || true)"
   managed="$(read_value_from YWD_DMR_FIREWALL_MANAGED "$FIREWALL_META_FILE" 2>/dev/null || true)"
+  status="$(read_value_from YWD_DMR_FIREWALL_STATUS "$FIREWALL_META_FILE" 2>/dev/null || printf ok)"
   source="$(read_value_from YWD_DMR_FIREWALL_SOURCE "$FIREWALL_META_FILE" 2>/dev/null || true)"
   port="$(read_value_from YWD_DMR_FIREWALL_PORT "$FIREWALL_META_FILE" 2>/dev/null || true)"
-  if [ "$managed" = 1 ]; then
+  if [ "$status" = failed ]; then
+    printf '%s SETUP FAILED %s -> %s/tcp\n' "${provider:-firewall}" "${source:-unknown}" "${port:-unknown}"
+  elif [ "$managed" = 1 ]; then
     printf '%s managed %s -> %s/tcp\n' "${provider:-firewall}" "${source:-unknown}" "${port:-unknown}"
   else
     printf '%s existing/user-owned %s -> %s/tcp\n' "${provider:-firewall}" "${source:-unknown}" "${port:-unknown}"

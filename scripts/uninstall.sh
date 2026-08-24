@@ -126,7 +126,7 @@ remove_firewall_integration() {
 
     if ufw_managed_rule_present "$source" "$port" "$comment"; then
       log "Removing YWD-DMR-managed UFW rule: $source -> $port/tcp"
-      if ! run ufw --force delete allow from "$source" to any port "$port" proto tcp comment "$comment" >/dev/null; then
+      if ! run ufw --force delete allow proto tcp from "$source" to any port "$port" comment "$comment" >/dev/null; then
         warn "Could not remove the YWD-DMR-managed UFW rule. It was left in place."
         return 1
       fi

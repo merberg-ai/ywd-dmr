@@ -164,7 +164,7 @@ delete_managed_ufw_rule() {
     return 0
   fi
   log "Removing old YWD-DMR-managed UFW rule: $source -> $port/tcp"
-  if ufw --force delete allow from "$source" to any port "$port" proto tcp comment "$comment" >/dev/null; then
+  if ufw --force delete allow proto tcp from "$source" to any port "$port" comment "$comment" >/dev/null; then
     return 0
   fi
   warn "Could not remove the old YWD-DMR-managed UFW rule. It was left in place."
@@ -172,11 +172,12 @@ delete_managed_ufw_rule() {
 }
 
 write_firewall_meta() {
-  local managed="$1" source="$2" port="$3"
+  local managed="$1" source="$2" port="$3" status="${4:-ok}"
   cat > "$FIREWALL_META_FILE" <<EOF
 # Managed by the YWD-DMR installer. Contains no credentials.
 YWD_DMR_FIREWALL_PROVIDER=ufw
 YWD_DMR_FIREWALL_MANAGED=$managed
+YWD_DMR_FIREWALL_STATUS=$status
 YWD_DMR_FIREWALL_SOURCE=$source
 YWD_DMR_FIREWALL_PORT=$port
 YWD_DMR_FIREWALL_COMMENT=$FIREWALL_COMMENT
@@ -431,7 +432,7 @@ rm -f -- "$OLD_ENV_TMP" "$OLD_RUNTIME_TMP" 2>/dev/null || true
 # Existing equivalent rules are never claimed as YWD-DMR-owned.
 FIREWALL_RESULT="$FIREWALL_SUMMARY"
 if [ "$FIREWALL_PLAN" = create-managed ]; then
-  if ufw --force allow from "$FIREWALL_SOURCE" to any port "$PORT" proto tcp comment "$FIREWALL_COMMENT" >/dev/null; then
+  if ufw --force allow proto tcp from "$FIREWALL_SOURCE" to any port "$PORT" comment "$FIREWALL_COMMENT" >/dev/null; then
     log "Added UFW rule for YWD-DMR LAN access: $FIREWALL_SOURCE -> $PORT/tcp"
     if [ "$OLD_FW_PROVIDER" = ufw ] && [ "$OLD_FW_MANAGED" = 1 ] \
        && { [ "$OLD_FW_SOURCE" != "$FIREWALL_SOURCE" ] || [ "$OLD_FW_PORT" != "$PORT" ]; }; then
@@ -440,6 +441,7 @@ if [ "$FIREWALL_PLAN" = create-managed ]; then
     write_firewall_meta 1 "$FIREWALL_SOURCE" "$PORT"
     FIREWALL_RESULT="UFW managed: $FIREWALL_SOURCE -> $PORT/tcp"
   else
+    write_firewall_meta 0 "$FIREWALL_SOURCE" "$PORT" failed
     warn "YWD-DMR started successfully, but the UFW rule could not be added."
     warn "The service may not be reachable from other LAN devices until the firewall is configured."
     FIREWALL_RESULT="UFW rule creation FAILED; service itself is healthy"
