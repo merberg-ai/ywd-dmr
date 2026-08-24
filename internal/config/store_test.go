@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -141,13 +142,15 @@ func TestFileStoreRecoversFromCorruptCurrent(t *testing.T) {
 func TestFileStoreRejectsUnsupportedStoredSchema(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, knownGoodFilename)
-	if err := os.WriteFile(path, []byte(`{"schema":99,"revision":1,"identity":{"callsign":"N0CALL","dmr_id":1234567,"essid":1}}`), 0o600); err != nil {
+	data := []byte(`{"schema":99}`)
+	data = []byte(strings.ReplaceAll(string(data), `\"`, `"`))
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatalf("write test config: %v", err)
 	}
 
 	store := NewFileStore(dir)
 	_, err := store.Load()
-	if err == nil || errors.Is(err, ErrNoKnownGoodConfig) {
-		t.Fatalf("expected schema error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "unsupported configuration schema 99") {
+		t.Fatalf("expected explicit schema error, got %v", err)
 	}
 }
