@@ -118,7 +118,7 @@ func validMasterAddress(value string) bool {
 	if net.ParseIP(value) != nil {
 		return true
 	}
-	if strings.ContainsAny(value, "/:@[] \\\t\r\n") {
+	if strings.ContainsAny(value, "/:@[] ") || strings.ContainsRune(value, '\\') || containsControl(value) {
 		return false
 	}
 	labels := strings.Split(value, ".")
