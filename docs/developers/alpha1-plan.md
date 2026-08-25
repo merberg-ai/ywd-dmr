@@ -19,7 +19,7 @@ The first on-air milestone is successful when a user can install YWD-DMR, finish
 - [x] Radio identity model and non-mutating setup validation API
 - [x] Known-good configuration schema, atomic persistence, and rollback/recovery core
 - [x] Daemon-owned read-only setup status
-- [ ] Authentication and one-time first-run claim — one-time claim implementation is on `dev`; real-machine claim validation and normal password login remain
+- [ ] Authentication and one-time first-run claim — one-time claim is real-machine validated; normal password login/logout is implemented on `dev` and awaiting installed validation
 - [ ] Admin / Operator / Observer authorization model
 - [ ] Structured logging and support bundle
 - [ ] SQLite event/history persistence where relational storage is justified
@@ -133,10 +133,17 @@ Current progress:
 - [x] First-admin password verifier format using standard-library PBKDF2-HMAC-SHA256 with random salt and stored iteration count.
 - [x] `POST /api/v1/setup/claim` with one-time semantics and opaque HttpOnly `SameSite=Strict` session cookie.
 - [x] `GET /api/v1/auth/session` current-session inspection.
-- [ ] Pi 5 installed-appliance exercise of wrong-code rejection, successful claim, claim-code deletion, one-time reuse rejection, claimed restart persistence, and memory-only session invalidation on restart.
-- [ ] Administrator password login after restart, throttling, and logout.
+- [x] Pi 5 installed-appliance exercise of wrong-code rejection, successful claim, claim-code deletion, one-time reuse rejection, claimed restart persistence, memory-only session invalidation on restart, no code regeneration while claimed, cleanup, and final health.
+- [x] First Pi 5 PBKDF2/claim timing captured: `0.516708s` at 310000 iterations.
+- [x] `POST /api/v1/auth/login` implementation using the persisted password verifier and a fresh opaque in-memory session.
+- [x] Generic wrong-username/wrong-password authentication failure behavior.
+- [x] In-memory direct-client login throttle: five failures in five minutes -> 60-second block.
+- [x] `POST /api/v1/auth/logout` session invalidation and cookie expiration.
+- [x] Automated login/logout/throttle tests added on `dev`.
+- [ ] Pi 5 installed-appliance validation of password login after restart, generic failures, throttling, logout, and restart-cleared sessions.
 - [ ] Observer / Operator / Admin server-side authorization.
+- [ ] Origin/CSRF protection for authenticated browser mutations.
 - [ ] Protected configuration validate/test/commit workflow.
 - [ ] Guided WebUI first-run wizard.
 
-The current LAN test dashboard remains development-only. Do not router-forward or publicly expose it. The one-time claim endpoint is the only unauthenticated mutation and requires the locally retrieved high-entropy bootstrap code; configuration commits, radio/network controls, and secret reads remain unavailable until normal login/authorization middleware exists.
+The current LAN test dashboard remains development-only. Do not router-forward or publicly expose it. The one-time claim endpoint remains the only unauthenticated setup mutation requiring the locally retrieved high-entropy bootstrap code. Normal login/logout now exist, but configuration commits, radio/network controls, and secret reads remain unavailable until role authorization and browser mutation protections are complete.
