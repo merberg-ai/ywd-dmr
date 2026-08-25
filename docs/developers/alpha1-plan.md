@@ -19,8 +19,8 @@ The first on-air milestone is successful when a user can install YWD-DMR, finish
 - [x] Radio identity model and non-mutating setup validation API
 - [x] Known-good configuration schema, atomic persistence, and rollback/recovery core
 - [x] Daemon-owned read-only setup status
-- [ ] Authentication and one-time first-run claim — one-time claim is real-machine validated; normal password login/logout is implemented on `dev` and awaiting installed validation
-- [ ] Admin / Operator / Observer authorization model
+- [x] Authentication and one-time first-run claim — claim plus normal password login/logout/throttling are real-machine validated on Pi 5
+- [ ] Admin / Operator / Observer authorization model — implementation and automated tests are on `dev`; installed validation remains
 - [ ] Structured logging and support bundle
 - [ ] SQLite event/history persistence where relational storage is justified
 
@@ -115,7 +115,7 @@ The tested appliance foundation was promoted from `dev` to `main` through PR #2.
 
 ## Current Alpha1 focus — setup, security, and configuration
 
-The active work establishes one authoritative setup/configuration/security contract before BrandMeister and audio work expands. See [Setup and Security Phase](setup-security-phase.md) and [Known-good Configuration Store](configuration-store.md).
+The active work establishes one authoritative setup/configuration/security contract before BrandMeister and audio work expands. See [Setup and Security Phase](setup-security-phase.md), [Known-good Configuration Store](configuration-store.md), and [Authorization and Browser Mutation Protection](authorization-model.md).
 
 Current progress:
 
@@ -139,11 +139,15 @@ Current progress:
 - [x] Generic wrong-username/wrong-password authentication failure behavior.
 - [x] In-memory direct-client login throttle: five failures in five minutes -> 60-second block.
 - [x] `POST /api/v1/auth/logout` session invalidation and cookie expiration.
-- [x] Automated login/logout/throttle tests added on `dev`.
-- [ ] Pi 5 installed-appliance validation of password login after restart, generic failures, throttling, logout, and restart-cleared sessions.
-- [ ] Observer / Operator / Admin server-side authorization.
-- [ ] Origin/CSRF protection for authenticated browser mutations.
+- [x] Automated login/logout/throttle tests.
+- [x] Pi 5 installed-appliance validation of login after restart, generic failures, throttling, logout, restart-cleared sessions/throttle, cleanup, and final health.
+- [x] Pi 5 login timings captured: wrong username `0.520663s`, wrong password `0.520534s`, valid login `0.519940s`, post-restart valid login `0.517669s`.
+- [x] Observer / Operator / Admin role hierarchy and fail-closed role comparison implemented.
+- [x] Reusable cookie-session authorization middleware implemented with authenticated-principal request context.
+- [x] Browser Origin / `Sec-Fetch-Site` protection implemented for state-changing methods, while preserving direct non-browser API clients.
+- [x] Automated authorization and browser-origin tests added on `dev`.
+- [ ] Pi 5 installed-appliance validation of the role/origin security slice.
 - [ ] Protected configuration validate/test/commit workflow.
 - [ ] Guided WebUI first-run wizard.
 
-The current LAN test dashboard remains development-only. Do not router-forward or publicly expose it. The one-time claim endpoint remains the only unauthenticated setup mutation requiring the locally retrieved high-entropy bootstrap code. Normal login/logout now exist, but configuration commits, radio/network controls, and secret reads remain unavailable until role authorization and browser mutation protections are complete.
+The current LAN test dashboard remains development-only. Do not router-forward or publicly expose it. One-time claim and normal login are validated; role/origin middleware is the active security gate before configuration commits, radio/network controls, or secret reads are opened.
