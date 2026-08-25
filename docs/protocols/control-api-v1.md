@@ -13,11 +13,11 @@ Currently implemented and read-only:
 - `GET /api/v1/status`
 - `GET /api/v1/capabilities`
 
-Mutating radio controls are intentionally absent until authentication, authorization, PTT leases, and TX timeout behavior exist.
+Mutating radio controls are intentionally absent until PTT leases, TX timeout behavior, and the DMR runtime exist.
 
 ## Browser mutation rule
 
-State-changing browser requests pass through a global same-origin check before the API endpoint runs. The protected HTTP methods are:
+State-changing browser requests pass through a global same-origin check before the API endpoint runs:
 
 ```text
 POST
@@ -26,25 +26,25 @@ PATCH
 DELETE
 ```
 
-For requests that include browser origin metadata:
+For requests carrying browser origin metadata:
 
 - `Origin`, when present, must match the request scheme and Host;
 - `Sec-Fetch-Site`, when present, must be `same-origin` or `none`;
-- cross-site and same-site/different-origin browser mutation requests return HTTP `403` with `{"error":"same-origin request required"}`.
+- cross-site and same-site/different-origin mutations return HTTP `403` with `{"error":"same-origin request required"}`.
 
-Read-only GET requests are not rejected by this browser-mutation filter. Direct non-browser API clients such as curl normally send neither `Origin` nor `Sec-Fetch-Site` and remain supported.
+Read-only GET requests are not blocked by this filter. Direct non-browser API clients such as curl normally send neither header and remain supported.
 
-This behavior is real-machine validated on the Raspberry Pi 5. YWD-DMR does not currently trust forwarded proxy headers for this decision. HTTPS reverse-proxy support needs an explicit trusted-proxy contract before it is considered production supported.
+This behavior is Raspberry Pi 5 validated. YWD-DMR does not currently trust forwarded proxy headers for this decision; production HTTPS reverse-proxy behavior needs an explicit trusted-proxy contract.
 
 ## Role authorization contract
 
-The protected-operation hierarchy is:
+Protected hierarchy:
 
 ```text
 Observer < Operator < Admin
 ```
 
-Unknown roles fail closed. Protected handlers require a live opaque session, enforce their minimum server-side role, return HTTP `401` for missing/invalid authentication and HTTP `403` for insufficient role, and receive the authenticated principal through request context.
+Unknown roles fail closed. Protected handlers require a live opaque session, enforce their minimum role, return HTTP `401` for missing/invalid authentication and HTTP `403` for insufficient role, and receive the authenticated principal through request context.
 
 The first claimed account is Admin. Operator/Observer account management is not exposed yet.
 
@@ -54,9 +54,9 @@ The first claimed account is Admin. Operator/Observer account management is not 
 GET /api/v1/setup/status
 ```
 
-This is a read-only daemon-owned setup summary. It never returns the stored station identity, credentials, tokens, passwords, or other protected settings.
+This read-only daemon-owned summary never returns stored identity, credentials, tokens, passwords, or other protected settings.
 
-A new unclaimed installation with no readable known-good configuration reports:
+A fresh installation reports:
 
 ```json
 {
@@ -71,156 +71,44 @@ A new unclaimed installation with no readable known-good configuration reports:
 }
 ```
 
-Configuration state may be `missing`, `loaded`, `recovered`, or `error`. After the installation is claimed, daemon-owned `stage`/`next_step` values move to `claimed`/`identity` when identity is missing, or `identity_complete`/`network` when a known-good identity is present.
-
-Other methods return HTTP `405` with `Allow: GET`.
+Configuration state may be `missing`, `loaded`, `recovered`, or `error`. Once claimed and identity is durable, setup moves to `identity_complete` / `network`.
 
 ## One-time installation claim
 
 ```text
 POST /api/v1/setup/claim
-Content-Type: application/json
 ```
 
-This is the one deliberate unauthenticated mutating setup operation. A fresh appliance can be claimed only by presenting the high-entropy bootstrap code retrieved locally from the appliance with `sudo ywd-dmr claim-code`.
+This is the one deliberate unauthenticated setup mutation. It requires the high-entropy bootstrap code retrieved locally with:
 
-Request:
-
-```json
-{
-  "claim_code": "YOUR-ONE-TIME-CODE",
-  "username": "sysop",
-  "password": "choose a long administrator password"
-}
+```bash
+sudo ywd-dmr claim-code
 ```
 
-A successful claim returns HTTP `201` with non-secret administrator/session metadata:
+Successful claim returns HTTP `201` with non-secret Admin/session metadata and sets the opaque `ywd_dmr_session` only as an HttpOnly `SameSite=Strict` cookie. The token is never returned in JSON. On HTTPS the cookie is also `Secure`.
 
-```json
-{
-  "claimed": true,
-  "username": "sysop",
-  "role": "admin",
-  "expires_at": "..."
-}
-```
+Claim failure behavior includes malformed JSON `400`, wrong code `403`, and already-claimed `409`. The complete claim lifecycle is Pi 5 validated.
 
-The opaque session token is set only in the `ywd_dmr_session` HttpOnly cookie and is never returned in JSON. The cookie is `SameSite=Strict`; on HTTPS requests it is also marked `Secure`. Current LAN-test HTTP cannot use the Secure cookie flag, which is one reason this development build must not be publicly exposed.
-
-Claim failure behavior:
-
-- malformed/unknown JSON -> HTTP `400`;
-- invalid username/password policy -> HTTP `400` with field errors;
-- wrong claim code -> HTTP `403` with a generic claim-failed response;
-- installation already claimed -> HTTP `409`;
-- internal durable-state failure -> HTTP `500` without leaking internal details.
-
-A successful durable claim consumes the bootstrap path. Reusing the claim request returns `409`, and daemon startup never regenerates a claim code merely because the old plaintext code is gone.
-
-The full installed claim path has been validated on the Raspberry Pi 5.
-
-## Administrator login
+## Administrator login/logout/session
 
 ```text
 POST /api/v1/auth/login
-Content-Type: application/json
-```
-
-Request:
-
-```json
-{
-  "username": "sysop",
-  "password": "your administrator password"
-}
-```
-
-A successful login returns HTTP `200` with non-secret session metadata:
-
-```json
-{
-  "authenticated": true,
-  "username": "sysop",
-  "role": "admin",
-  "expires_at": "..."
-}
-```
-
-The new opaque session token is set only in the `ywd_dmr_session` HttpOnly cookie. It is never returned in JSON. Sessions remain memory-only and are therefore cleared by daemon restart.
-
-Wrong username and wrong password both return:
-
-```text
-HTTP 401
-{"error":"authentication failed"}
-```
-
-The password KDF is still evaluated when the username is wrong so the normal failure path does not become a cheap timing oracle.
-
-Current direct-client login throttling is:
-
-```text
-5 failed logins from one direct client IP inside 5 minutes
--> block that IP for 60 seconds
-```
-
-While blocked, login returns HTTP `429` with `Retry-After` and:
-
-```json
-{
-  "error": "login temporarily unavailable"
-}
-```
-
-The installed Pi 5 login path is validated, including generic wrong-credential behavior, successful restart login, logout invalidation, five-failure throttling, `429`/`Retry-After`, restart-cleared sessions/throttle, and durable admin persistence.
-
-## Administrator logout
-
-```text
 POST /api/v1/auth/logout
+GET  /api/v1/auth/session
 ```
 
-Logout invalidates the current in-memory session when a session cookie is present and sends an expired `ywd_dmr_session` cookie to the client. It returns HTTP `204` with no response body. Calling logout without a live session is harmless and still clears the browser cookie state.
+Wrong username and wrong password both return generic HTTP `401` authentication failure and both execute the password KDF. Five failures from one direct client IP inside five minutes cause a 60-second memory-only block; blocked login returns HTTP `429` plus `Retry-After`.
 
-Other methods return HTTP `405` with `Allow: POST`.
+Successful login sets a fresh opaque cookie. Logout invalidates the in-memory session and expires the cookie. Daemon restart intentionally clears sessions/throttle but preserves durable Admin state. The complete behavior is Pi 5 validated.
 
-## Current session inspection
-
-```text
-GET /api/v1/auth/session
-```
-
-Unauthenticated/expired/missing-cookie requests return HTTP `200` with:
-
-```json
-{
-  "authenticated": false
-}
-```
-
-A valid session returns only:
-
-```json
-{
-  "authenticated": true,
-  "username": "sysop",
-  "role": "admin",
-  "expires_at": "..."
-}
-```
-
-The token itself is never echoed.
-
-## Setup validation
-
-### Validate station identity
+## Validate station identity
 
 ```text
 POST /api/v1/setup/identity/validate
 Content-Type: application/json
 ```
 
-This endpoint is public and deliberately non-mutating. It exists so setup clients can normalize and validate form input without changing durable state.
+This endpoint is public and deliberately non-mutating.
 
 Request:
 
@@ -232,7 +120,7 @@ Request:
 }
 ```
 
-Successful transport with valid fields:
+Valid response:
 
 ```json
 {
@@ -246,36 +134,20 @@ Successful transport with valid fields:
 }
 ```
 
-A syntactically valid request with invalid setup fields still returns HTTP `200` because field validation is a normal result. Malformed JSON, unknown JSON fields, multiple top-level JSON values, or an oversized request return HTTP `400`.
+Syntactically valid requests with invalid fields still return HTTP `200` with `valid: false`. Malformed/unknown JSON returns HTTP `400`.
 
-Current validation rules:
-
-- Callsign is trimmed, converted to uppercase, must be 3 to 12 ASCII letters/numbers, and must contain at least one letter and one digit.
-- Base DMR ID must be from 1 through 9999999.
-- ESSID must be from 0 through 99.
-
-### Commit station identity
+## Commit station identity
 
 ```text
 POST /api/v1/setup/identity/commit
 Content-Type: application/json
 ```
 
-This is the first normal protected setup mutation. It requires a live **Admin** session and is also subject to the global browser same-origin rule.
+This is Admin-only and subject to browser same-origin protection.
 
-Request:
+Request uses the same station-identity shape as validation. The daemon normalizes and validates the untrusted candidate, commits it through the known-good store, then advances runtime setup state only after durable commit succeeds.
 
-```json
-{
-  "callsign": "N0CALL",
-  "dmr_id": 1234567,
-  "essid": 1
-}
-```
-
-The daemon treats the request as an untrusted configuration candidate. It normalizes and validates the identity, commits it through the existing known-good configuration store, then advances daemon setup state only after durable commit succeeds.
-
-A successful first commit returns HTTP `200`:
+First successful commit returns:
 
 ```json
 {
@@ -289,44 +161,97 @@ A successful first commit returns HTTP `200`:
 }
 ```
 
-Subsequent successful commits increment the known-good revision and rotate the prior known-good snapshot using the existing configuration-store rules.
+Later successful commits increment the revision and rotate the previous snapshot. Unauthorized, cross-origin, malformed, invalid, or storage-failed requests must not replace current known-good state.
 
-Failure behavior:
+The installed Pi 5 validation proved revision `1 -> 2`, `0600 ywd-dmr:ywd-dmr` current/previous snapshots, invalid-candidate preservation, restart persistence, and recovery of API-created previous revision `1` after deliberate corruption of current revision `2`.
 
-- missing or invalid session -> HTTP `401` with `{"error":"authentication required"}`;
-- authenticated principal below Admin -> HTTP `403` with `{"error":"forbidden"}`;
-- browser cross-origin mutation -> HTTP `403` with `{"error":"same-origin request required"}`;
-- malformed/unknown JSON -> HTTP `400`;
-- invalid identity candidate -> HTTP `400` with `error: invalid configuration candidate` and field errors;
-- durable configuration-store failure -> HTTP `500` with a generic commit-failed response.
+## Validate DMR network candidate
 
-An invalid or unauthorized request must not replace the current known-good configuration or advance runtime setup state.
-
-Identity has no external network dependency to test, so this transaction is:
+Implemented on `dev`:
 
 ```text
-candidate -> normalize/validate -> durable commit
+POST /api/v1/setup/network/validate
+Content-Type: application/json
 ```
 
-BrandMeister/network settings will later use the fuller path:
+This endpoint is **Admin-only** even though it does not persist anything, because the request contains the BrandMeister hotspot password. Browser same-origin protection also applies.
+
+Request:
+
+```json
+{
+  "backend": "brandmeister",
+  "master_address": "master.example.net",
+  "master_port": 62031,
+  "password": "your BrandMeister hotspot password"
+}
+```
+
+`master_port: 0` means use the current BrandMeister/Homebrew default `62031`.
+
+A valid response contains only non-secret normalized data:
+
+```json
+{
+  "valid": true,
+  "normalized": {
+    "backend": "brandmeister",
+    "master_address": "master.example.net",
+    "master_port": 62031,
+    "password_set": true
+  },
+  "errors": []
+}
+```
+
+The password is never echoed. Validation does not contact BrandMeister, write known-good configuration, increment a revision, or advance setup stage.
+
+A syntactically valid request with invalid fields returns HTTP `200` with `valid: false` and field errors. Malformed/unknown JSON returns HTTP `400`. Missing/invalid Admin authentication returns HTTP `401`; cross-origin browser requests return HTTP `403` before validation runs.
+
+Current validation rules:
+
+- only backend `brandmeister` is accepted;
+- master address must be a hostname or IP address, not a URL/path/embedded port;
+- port must normalize into `1..65535`;
+- password must be non-empty/non-whitespace, at most 256 characters, and contain no control characters.
+
+## Network test/commit contract
+
+The real network test and commit endpoints are **not exposed yet**.
+
+Network configuration must use:
 
 ```text
-candidate -> validate -> connectivity test -> commit
+candidate -> local validation -> real connectivity/authentication test -> commit
 ```
 
-The identity-commit implementation and automated tests are on `dev`; installed Raspberry Pi validation is the next gate.
+A local validation result is never proof that credentials work.
 
-See [Setup and Security Phase](../developers/setup-security-phase.md), [Known-good Configuration Store](../developers/configuration-store.md), and [Authorization and Browser Mutation Protection](../developers/authorization-model.md).
+`internal/dmrnet` defines structured backend test reasons including:
 
-## Planned rules
+```text
+ok
+login
+auth
+config
+timeout
+network
+unavailable
+```
+
+The future BrandMeister tester will map the established Homebrew login/auth/config handshake into those reasons, and durable network commit will remain closed until a real test succeeds.
+
+See [DMR Network Backend and BrandMeister Setup Contract](../developers/network-backend-contract.md).
+
+## General API rules
 
 - JSON request/response for normal control operations.
 - Server-side authorization on every protected operation.
 - Observer / Operator / Admin role enforcement.
 - Browser same-origin protection for state-changing requests.
-- Opaque browser sessions and separately revocable device credentials.
-- Secrets may be replaced but are never returned to a client after storage.
-- Capability discovery is preferred over hard-coding server version checks in Android/WebUI.
+- Opaque browser sessions and separately revocable future device credentials.
+- Secrets may be supplied/replaced but are never returned to a client after storage or in validation/test results.
+- Capability discovery is preferred over hard-coded server version checks.
 - API v1 remains compatible for the lifetime of v1; incompatible changes require a new protocol version.
 
 An OpenAPI document will become the machine-readable contract before external clients are considered stable.
