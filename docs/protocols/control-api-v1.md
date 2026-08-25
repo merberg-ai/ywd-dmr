@@ -172,7 +172,7 @@ POST /api/v1/setup/network/validate
 Content-Type: application/json
 ```
 
-This endpoint is **Admin-only** even though it does not persist anything, because the request contains the BrandMeister hotspot password. Browser same-origin protection also applies.
+This endpoint is **Admin-only** even though it does not persist anything, because the request contains the BrandMeister Hotspot Security password. Browser same-origin protection also applies.
 
 Request:
 
@@ -186,6 +186,8 @@ Request:
 ```
 
 `master_port: 0` means use the Homebrew default `62031`.
+
+Current BrandMeister password validation requires a non-empty Hotspot Security password of at most **20 characters** with no control characters. BrandMeister recommends avoiding special characters, but YWD-DMR does not currently impose an additional punctuation whitelist.
 
 A valid response contains only non-secret normalized data:
 
@@ -217,7 +219,7 @@ POST /api/v1/setup/network/test
 Content-Type: application/json
 ```
 
-This endpoint is **Admin-only**, same-origin protected for browsers, and deliberately non-persisting. It uses the same request shape as `/network/validate`.
+This endpoint is **Admin-only**, same-origin protected for browsers, and deliberately non-persisting. It uses the same request shape and local password rules as `/network/validate`.
 
 Before opening a UDP socket the daemon requires:
 
