@@ -12,6 +12,7 @@ import (
 
 	"github.com/merberg-ai/ywd-dmr/internal/config"
 	"github.com/merberg-ai/ywd-dmr/internal/core"
+	"github.com/merberg-ai/ywd-dmr/internal/dmrnet"
 	"github.com/merberg-ai/ywd-dmr/internal/httpapi"
 	"github.com/merberg-ai/ywd-dmr/internal/security"
 )
@@ -53,7 +54,8 @@ func main() {
 		log.Printf("WARNING: known-good configuration could not be loaded: %v", err)
 	}
 
-	handler := httpapi.NewWithSecurityAndConfig(state, securityManager, store, webRoot, docsRoot)
+	networkTester := dmrnet.NewBrandMeisterTester()
+	handler := httpapi.NewWithServices(state, securityManager, store, networkTester, webRoot, docsRoot)
 
 	srv := &http.Server{
 		Addr:              listen,
