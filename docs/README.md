@@ -23,6 +23,7 @@ The copy in this folder is the canonical documentation for the matching YWD-DMR 
 - [Authorization and browser mutation protection](developers/authorization-model.md)
 - [Protected station-identity commit validation](developers/identity-commit-validation-notes.md)
 - [DMR network backend and BrandMeister setup contract](developers/network-backend-contract.md)
+- [BrandMeister candidate validation](developers/network-validation-notes.md)
 - [Branching and releases](developers/branching-and-releases.md)
 - [Licensing status](developers/licensing.md)
 - [Frontend branding and asset rules](developers/frontend-branding.md)
