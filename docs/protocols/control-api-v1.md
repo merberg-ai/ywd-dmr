@@ -167,8 +167,6 @@ The installed Pi 5 validation proved revision `1 -> 2`, `0600 ywd-dmr:ywd-dmr` c
 
 ## Validate DMR network candidate
 
-Implemented on `dev`:
-
 ```text
 POST /api/v1/setup/network/validate
 Content-Type: application/json
@@ -187,7 +185,7 @@ Request:
 }
 ```
 
-`master_port: 0` means use the current BrandMeister/Homebrew default `62031`.
+`master_port: 0` means use the Homebrew default `62031`.
 
 A valid response contains only non-secret normalized data:
 
@@ -208,26 +206,48 @@ The password is never echoed. Validation does not contact BrandMeister, write kn
 
 A syntactically valid request with invalid fields returns HTTP `200` with `valid: false` and field errors. Malformed/unknown JSON returns HTTP `400`. Missing/invalid Admin authentication returns HTTP `401`; cross-origin browser requests return HTTP `403` before validation runs.
 
-Current validation rules:
+The complete protected local-validation behavior is installed Pi 5 validated, including password redaction and byte-for-byte known-good preservation.
 
-- only backend `brandmeister` is accepted;
-- master address must be a hostname or IP address, not a URL/path/embedded port;
-- port must normalize into `1..65535`;
-- password must be non-empty/non-whitespace, at most 256 characters, and contain no control characters.
+## Test BrandMeister connectivity and credentials
 
-## Network test/commit contract
-
-The real network test and commit endpoints are **not exposed yet**.
-
-Network configuration must use:
+Implemented on `dev`:
 
 ```text
-candidate -> local validation -> real connectivity/authentication test -> commit
+POST /api/v1/setup/network/test
+Content-Type: application/json
 ```
 
-A local validation result is never proof that credentials work.
+This endpoint is **Admin-only**, same-origin protected for browsers, and deliberately non-persisting. It uses the same request shape as `/network/validate`.
 
-`internal/dmrnet` defines structured backend test reasons including:
+Before opening a UDP socket the daemon requires:
+
+- a locally valid network candidate;
+- an already committed/readable station identity;
+- the real network tester service.
+
+If station identity has not been committed, the endpoint returns HTTP `409`:
+
+```json
+{
+  "error": "station identity must be committed before testing a DMR network"
+}
+```
+
+Invalid network fields return HTTP `400` with `error: invalid network candidate` and field errors. The live tester does not run in either case.
+
+The request is bounded by a 10-second overall timeout. Normal test outcomes return HTTP `200` with a non-secret result:
+
+```json
+{
+  "ok": true,
+  "backend": "brandmeister",
+  "reason": "ok",
+  "message": "BrandMeister accepted login, hotspot authentication, and software-endpoint configuration.",
+  "duration_ms": 123
+}
+```
+
+Possible `reason` values are:
 
 ```text
 ok
@@ -239,9 +259,64 @@ network
 unavailable
 ```
 
-The future BrandMeister tester will map the established Homebrew login/auth/config handshake into those reasons, and durable network commit will remain closed until a real test succeeds.
+A failed credential/network test is a normal test result rather than an HTTP server failure. For example, a wrong Hotspot Security password should produce `ok: false` and `reason: auth` when the master rejects the `RPTK` stage.
 
-See [DMR Network Backend and BrandMeister Setup Contract](../developers/network-backend-contract.md).
+The response never contains the submitted password, the four-byte master salt, the SHA-256 authentication response, or other challenge material.
+
+### Wire behavior
+
+The current BrandMeister tester performs only:
+
+```text
+RPTL -> RPTACK+salt
+RPTK -> RPTACK
+RPTC -> RPTACK
+RPTCL
+```
+
+`RPTK` contains SHA-256 of `salt || password`. `RPTC` is the fixed Homebrew 302-byte configuration packet. After the third acknowledgement the tester explicitly closes the temporary session with `RPTCL`.
+
+The tester contains no `DMRD` transmit path and does not send DMR voice/data.
+
+### Station identity used by the test
+
+The test always reads identity from the known-good configuration store; the client cannot substitute a different DMR ID/callsign inside the network request.
+
+BrandMeister device ID is derived as:
+
+```text
+ESSID 0     -> base DMR ID
+ESSID 1..99 -> (base DMR ID * 100) + ESSID
+```
+
+The Homebrew config callsign field is eight characters wide. If the stored generic station callsign cannot fit, the live test returns a structured `config` failure rather than silently truncating it.
+
+### Persistence rule
+
+`/network/test` must not:
+
+- change the known-good revision;
+- create/rotate `known-good.previous.json`;
+- persist master address, port, backend, or password;
+- advance setup state.
+
+Those rules apply on both success and failure.
+
+The real tester and HTTP endpoint have local automated protocol/API coverage. Installed Pi validation and the first real BrandMeister handshake are the next gates.
+
+## Network commit contract
+
+The durable network commit endpoint is **not exposed yet**.
+
+Network configuration must continue to use:
+
+```text
+candidate -> local validation -> real connectivity/authentication test -> commit
+```
+
+The current known-good schema remains identity-only. A network commit will require an explicit schema/migration change after the live tester proves itself on the installed Pi.
+
+See [DMR Network Backend and BrandMeister Setup Contract](../developers/network-backend-contract.md) and [BrandMeister Candidate Validation Notes](../developers/network-validation-notes.md).
 
 ## General API rules
 
