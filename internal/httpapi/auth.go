@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	loginFailureLimit = 5
+	loginFailureLimit  = 5
 	loginFailureWindow = 5 * time.Minute
 	loginBlockDuration = 1 * time.Minute
 )
