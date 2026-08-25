@@ -62,7 +62,7 @@ func TestNetworkTestUsesKnownGoodIdentityWithoutEchoingPassword(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	secret := "do-not-echo-this-password"
+	secret := "no-echo-secret"
 	tester := &fakeNetworkTester{result: dmrnet.TestResult{
 		OK:      true,
 		Backend: config.NetworkBackendBrandMeister,
