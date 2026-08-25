@@ -15,8 +15,6 @@ These files are different from `/etc/ywd-dmr/ywd-dmr.env`. The `/etc` file conta
 
 The configuration snapshots are written with mode `0600`. The containing state directory remains restricted to the `ywd-dmr` service account.
 
-`ywd-dmrd` uses `/var/lib/ywd-dmr` by default and may be pointed at another state directory with `YWD_DMR_STATE_DIR` for development/test harnesses. Production appliance behavior keeps the normal state directory under `/var/lib/ywd-dmr/`.
-
 ## Current schema
 
 Schema 1 currently contains only the normalized radio identity:
@@ -35,8 +33,6 @@ Schema 1 currently contains only the normalized radio identity:
 
 `schema` and `revision` are daemon-owned. A setup client submits candidate values; it does not choose either field.
 
-Future schema revisions will add network, audio, vocoder, and other station configuration without changing the rule that clients submit candidates and the daemon decides what may become known-good.
-
 ## Commit rules
 
 A candidate follows this direction:
@@ -45,12 +41,9 @@ A candidate follows this direction:
 client candidate
       |
       v
-server-side validation
+server-side validation / normalization
       |
       +-- invalid -> reject, current known-good remains untouched
-      |
-      v
-normalize
       |
       v
 save current as previous rollback snapshot
@@ -60,6 +53,34 @@ atomic replace of current known-good snapshot
 ```
 
 The file implementation writes a temporary file in the same directory, sets restrictive permissions, writes and syncs the contents, then renames it over the destination and syncs the directory. Renaming within one filesystem gives us the atomic replacement property we need without a database dependency.
+
+On a first commit there is no previous snapshot yet. On a later successful commit, the prior current snapshot becomes `known-good.previous.json` before the new current snapshot is installed.
+
+## Protected HTTP commit path
+
+The first real HTTP consumer of the store is now implemented on `dev`:
+
+```text
+POST /api/v1/setup/identity/commit
+```
+
+This endpoint requires an Admin session and is covered by the global browser same-origin mutation rule. It accepts only the identity candidate fields; clients cannot supply `schema` or `revision`.
+
+Identity has no external service to probe, so this transaction is:
+
+```text
+candidate -> normalize/validate -> durable commit
+```
+
+A successful first commit creates revision 1. A later successful commit increments the revision and rotates the old current snapshot to the previous file. Runtime setup state advances only after the durable commit succeeds.
+
+Invalid candidates, missing authentication, insufficient role, cross-origin browser requests, malformed JSON, or durable-write failures must not replace known-good state.
+
+Network settings such as BrandMeister will later use the fuller pattern:
+
+```text
+candidate -> validate -> connectivity test -> commit
+```
 
 ## Startup and recovery behavior
 
@@ -72,9 +93,9 @@ If neither snapshot is usable, the daemon distinguishes two cases:
 - both snapshots absent -> configuration state is `missing`;
 - one or both snapshots exist but no usable configuration can be loaded -> configuration state is `error`.
 
-The read-only `GET /api/v1/setup/status` endpoint reports only this coarse health/state information, whether identity is configured, and the revision when available. It does not return the stored identity itself.
+The read-only `GET /api/v1/setup/status` endpoint reports only coarse health/state information, whether identity is configured, and the revision when available. It does not return the stored identity itself.
 
-A recovery commit must not overwrite a valid previous snapshot with the corrupt current file.
+A recovery commit must not overwrite a valid previous snapshot with a corrupt current file.
 
 ## Why plain JSON first
 
@@ -84,14 +105,14 @@ This does **not** mean YWD-DMR will never use SQLite. Event history, Last Heard,
 
 ## Security rule
 
-The store architecture is ready to contain protected fields later, but no BrandMeister password/token or administrator credential is being persisted in this slice.
+The store architecture is ready to contain protected fields later, but no BrandMeister password/token or administrator credential is persisted in this configuration document today.
 
 When secrets are added:
 
 - configuration read APIs must redact them;
 - candidates may replace a secret but normal clients must not retrieve the stored value;
 - filesystem ownership/mode remains part of the security boundary;
-- commit APIs must be protected by daemon-side authorization.
+- commit APIs must remain protected by daemon-side authorization.
 
 ## Current implementation status
 
@@ -107,8 +128,8 @@ Implemented on `dev`:
 - unit tests using temporary directories, including file-mode and recovery checks;
 - daemon startup loading from the configured state directory;
 - explicit missing/loaded/recovered/error setup state;
-- read-only setup-status reporting without returning stored identity fields.
+- read-only setup-status reporting without returning stored identity fields;
+- Admin-protected `POST /api/v1/setup/identity/commit` wired to this same store;
+- API tests for unauthorized rejection, normalized persistence, invalid-candidate preservation, revision increment, runtime setup-state advancement, and cross-origin rejection before mutation.
 
-The configuration-store unit suite, full Go suite, vet, and normal-user build passed on the Raspberry Pi 5 at the `2a889bb` checkpoint. The runtime startup/status wiring is the next installed-appliance exercise.
-
-The store is not exposed through a mutating HTTP API. That waits for claim/auth boundaries so the current unauthenticated LAN-test dashboard cannot commit station configuration.
+The core store and startup/recovery behavior were already exercised on the Raspberry Pi 5. Installed validation of the new protected HTTP commit path is the active gate.
