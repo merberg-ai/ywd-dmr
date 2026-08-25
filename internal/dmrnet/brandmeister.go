@@ -62,7 +62,7 @@ func (t *BrandMeisterTester) Test(ctx context.Context, identity config.RadioIden
 		return result(false, TestReasonConfig, err.Error()), nil
 	}
 
-	configPacket, err := buildBrandMeisterConfigPacket(identity, deviceID)
+	configPacket, err := buildBrandMeisterConfigPacket(identity, deviceID, candidate.RegistrationFrequencyHz)
 	if err != nil {
 		return result(false, TestReasonConfig, err.Error()), nil
 	}
@@ -186,7 +186,7 @@ func rejectionMessage(phase TestReason) string {
 	case TestReasonAuth:
 		return "BrandMeister rejected the Hotspot Security response. Verify the Hotspot Security password for the base DMR ID; it is separate from the SelfCare login password."
 	case TestReasonConfig:
-		return "BrandMeister rejected the software-endpoint configuration."
+		return "BrandMeister rejected the Homebrew registration metadata after successful authentication. Verify the registration frequency and endpoint configuration."
 	default:
 		return "BrandMeister rejected the temporary test session."
 	}
@@ -207,10 +207,13 @@ func brandMeisterDeviceID(identity config.RadioIdentity) (uint32, error) {
 	return uint32(id), nil
 }
 
-func buildBrandMeisterConfigPacket(identity config.RadioIdentity, deviceID uint32) ([]byte, error) {
+func buildBrandMeisterConfigPacket(identity config.RadioIdentity, deviceID uint32, registrationFrequencyHz int) ([]byte, error) {
 	callsign := strings.ToUpper(strings.TrimSpace(identity.Callsign))
 	if callsign == "" || len(callsign) > 8 {
 		return nil, fmt.Errorf("the stored callsign does not fit the BrandMeister Homebrew 8-character station field")
+	}
+	if registrationFrequencyHz < config.BrandMeisterMinFrequencyHz || registrationFrequencyHz > config.BrandMeisterMaxFrequencyHz {
+		return nil, fmt.Errorf("the BrandMeister Homebrew registration frequency is invalid")
 	}
 
 	packet := make([]byte, brandMeisterConfigPacketLength)
@@ -220,10 +223,14 @@ func buildBrandMeisterConfigPacket(identity config.RadioIdentity, deviceID uint3
 	copy(packet[:4], "RPTC")
 	binary.BigEndian.PutUint32(packet[4:8], deviceID)
 
+	frequency := fmt.Sprintf("%09d", registrationFrequencyHz)
 	putFixed(packet, 8, 8, callsign)
-	putFixed(packet, 16, 9, "000000000")
-	putFixed(packet, 25, 9, "000000000")
-	putFixed(packet, 34, 2, "00")
+	putFixed(packet, 16, 9, frequency)
+	putFixed(packet, 25, 9, frequency)
+	// Homebrew/BrandMeister treats these as registration metadata. YWD-DMR
+	// still has no RF transmit path; 01 W is the minimum informational value
+	// used for compatibility rather than a claim about actual transmitter power.
+	putFixed(packet, 34, 2, "01")
 	putFixed(packet, 36, 2, "01")
 	putFixed(packet, 38, 8, "0.000000")
 	putFixed(packet, 46, 9, "00.000000")
