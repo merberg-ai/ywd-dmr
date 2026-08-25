@@ -84,6 +84,75 @@ Claim failure behavior:
 
 A successful durable claim consumes the bootstrap path. Reusing the claim request returns `409`, and daemon startup never regenerates a claim code merely because the old plaintext code is gone.
 
+The full installed claim path has been validated on the Raspberry Pi 5, including durable claimed restart behavior, one-time code deletion/reuse rejection, and memory-only session invalidation after restart.
+
+## Administrator login
+
+```text
+POST /api/v1/auth/login
+Content-Type: application/json
+```
+
+Request:
+
+```json
+{
+  "username": "sysop",
+  "password": "your administrator password"
+}
+```
+
+A successful login returns HTTP `200` with non-secret session metadata:
+
+```json
+{
+  "authenticated": true,
+  "username": "sysop",
+  "role": "admin",
+  "expires_at": "..."
+}
+```
+
+The new opaque session token is set only in the `ywd_dmr_session` HttpOnly cookie. It is never returned in JSON. Sessions remain memory-only and are therefore cleared by daemon restart.
+
+The login verifier uses the persisted PBKDF2-HMAC-SHA256 administrator password record created during claim. Wrong username and wrong password both return the same generic response:
+
+```text
+HTTP 401
+{"error":"authentication failed"}
+```
+
+The password KDF is still evaluated when the username is wrong so the normal failure path does not become a cheap timing oracle.
+
+Current direct-client login throttling is:
+
+```text
+5 failed logins from one direct client IP inside 5 minutes
+-> block that IP for 60 seconds
+```
+
+While blocked, login returns HTTP `429` with `Retry-After` and:
+
+```json
+{
+  "error": "login temporarily unavailable"
+}
+```
+
+The throttle is memory-only and currently uses the direct TCP peer address. It deliberately does not trust `X-Forwarded-For`; proxy-aware behavior will be defined together with the future HTTPS/reverse-proxy deployment contract.
+
+If the installation has not yet been claimed, login returns HTTP `409` with `{"error":"installation is not claimed"}`. Malformed or unknown JSON returns HTTP `400`. Other methods return HTTP `405` with `Allow: POST`.
+
+## Administrator logout
+
+```text
+POST /api/v1/auth/logout
+```
+
+Logout invalidates the current in-memory session when a session cookie is present and sends an expired `ywd_dmr_session` cookie to the client. It returns HTTP `204` with no response body. Calling logout without a live session is harmless and still clears the browser cookie state.
+
+Other methods return HTTP `405` with `Allow: POST`.
+
 ## Current session inspection
 
 ```text
@@ -109,7 +178,7 @@ A valid session returns only:
 }
 ```
 
-The token itself is never echoed. Current sessions are intentionally memory-only, so daemon restart invalidates them. Password login after restart, throttling, logout, and authorization middleware are the next security slice.
+The token itself is never echoed. Current sessions are intentionally memory-only, so daemon restart invalidates them while the durable claimed/admin state remains.
 
 ## Setup validation
 
@@ -154,7 +223,7 @@ Current validation rules:
 - Base DMR ID must be from 1 through 9999999.
 - ESSID must be from 0 through 99.
 
-This endpoint is deliberately **non-mutating**. It does not save configuration, connect to BrandMeister, or control/transmit radio traffic.
+This endpoint is deliberately **non-mutating**. It does not save the values. Configuration commits remain blocked until server-side role authorization and browser mutation protections are implemented.
 
 See [Setup and Security Phase](../developers/setup-security-phase.md) for the ordering of persistence, claim/auth, roles, and setup commits.
 
@@ -162,6 +231,8 @@ See [Setup and Security Phase](../developers/setup-security-phase.md) for the or
 
 - JSON request/response for normal control operations.
 - Server-side authorization on every protected operation.
+- Origin/CSRF protection for authenticated browser mutations.
+- Observer / Operator / Admin role enforcement.
 - Opaque browser sessions and separately revocable device credentials.
 - Secrets may be replaced but are never returned to a client after storage.
 - Capability discovery is preferred over hard-coding server version checks in Android/WebUI.
