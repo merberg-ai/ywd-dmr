@@ -184,7 +184,7 @@ func rejectionMessage(phase TestReason) string {
 	case TestReasonLogin:
 		return "BrandMeister rejected the DMR/hotspot ID during login."
 	case TestReasonAuth:
-		return "BrandMeister rejected the hotspot security password."
+		return "BrandMeister rejected the Hotspot Security response. Verify the Hotspot Security password for the base DMR ID; it is separate from the SelfCare login password."
 	case TestReasonConfig:
 		return "BrandMeister rejected the software-endpoint configuration."
 	default:
