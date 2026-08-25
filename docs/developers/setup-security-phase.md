@@ -112,9 +112,9 @@ Installed-appliance validation on the Raspberry Pi 5 is complete. The successful
 
 See [One-time Claim Validation Notes](claim-validation-notes.md) for the exact real-machine results.
 
-### 5. Administrator login and protected authorization
+### 5. Administrator login
 
-Normal administrator password login after a daemon restart is now implemented on `dev` and is the active real-machine validation slice.
+Normal administrator password login after daemon restart is implemented and real-machine validated.
 
 Implemented endpoints:
 
@@ -139,17 +139,29 @@ The throttle is memory-only and does not create a persistent lockout database. T
 
 `POST /api/v1/auth/logout` invalidates the current in-memory session, when present, and expires the browser cookie. Logout is idempotent from the client's point of view.
 
-Automated tests cover restart login from the persisted verifier, fresh-session creation, generic wrong-username/wrong-password behavior, login/logout HTTP behavior, session invalidation, method enforcement, and throttle state transitions. Real installed-appliance validation is still required before this login slice is marked complete.
+Installed Pi 5 validation passed. Wrong username and wrong password both returned the identical HTTP `401` response and took `0.520663s` and `0.520534s` respectively; valid login returned HTTP `200` in `0.519940s`. Logout returned `204` and invalidated the token. Five failed logins returned `401`, the sixth returned `429` with `Retry-After: 59`, and daemon restart cleared the memory-only throttle while preserving durable admin state. A correct post-restart login returned `200` in `0.517669s`.
 
-The next authorization layer must add:
+See [Administrator Authentication Validation Notes](auth-validation-notes.md) for the exact real-machine results.
 
-- server-side authorization middleware;
-- Observer / Operator / Admin roles;
-- origin/CSRF protections for authenticated mutating browser requests.
+### 6. Roles and browser mutation protection
 
-### 6. Protected configuration commit APIs
+The active security slice defines the server-side role hierarchy:
 
-Once login/authorization exists, protected endpoints can submit candidate settings through the known-good transaction path.
+```text
+Observer < Operator < Admin
+```
+
+Unknown roles fail closed. Protected handlers can require a minimum role and receive the authenticated principal through request context.
+
+State-changing browser requests (`POST`, `PUT`, `PATCH`, `DELETE`) now pass through global browser-origin protection. Browser `Origin` must match the request scheme/Host when present, and `Sec-Fetch-Site` must be `same-origin` or `none` when present. Cross-site and same-site/different-origin browser mutations are rejected with HTTP `403`. Direct non-browser API clients that do not send browser origin headers remain usable.
+
+This slice does not yet create Operator/Observer accounts or expose configuration/radio controls. The first claimed account remains Admin. The authorization machinery is intentionally established before protected mutation endpoints are opened.
+
+See [Authorization and Browser Mutation Protection](authorization-model.md) for the detailed contract.
+
+### 7. Protected configuration commit APIs
+
+Once the role/origin slice is real-machine validated, protected endpoints can submit candidate settings through the known-good transaction path.
 
 The setup state progresses through daemon-owned states such as:
 
@@ -163,23 +175,23 @@ ready
 
 Configuration changes follow validate -> test -> commit. A failed candidate or later BrandMeister connectivity test must not destroy the last known-good configuration.
 
-### 7. BrandMeister configuration
+### 8. BrandMeister configuration
 
 Only after the configuration/security contract exists should the first network backend accept DMR identity, master selection, credentials, reconnect policy, and destination/talkgroup configuration.
 
 Network settings follow validate -> test -> commit. A failed BrandMeister test must not destroy the last known-good configuration.
 
-### 8. Guided WebUI wizard
+### 9. Guided WebUI wizard
 
 The WebUI becomes a client of the same setup APIs used by future Android/CLI clients. It should use plain-language pages, explain DMR terms in context, and offer useful retry/troubleshooting guidance when a test fails.
 
 ## Security boundary during development
 
-The current LAN test dashboard is still not a production-authenticated interface. Do **not** router-forward or publicly expose it.
+The current LAN test dashboard is still not a production-ready authenticated interface. Do **not** router-forward or publicly expose it.
 
 The identity-validation endpoint is callable without authentication because it only normalizes caller-supplied non-secret data and changes no state. `GET /api/v1/setup/status` exposes only coarse setup/configuration health metadata. `POST /api/v1/setup/claim` is the one deliberate unauthenticated setup mutation and requires the high-entropy bootstrap code available only from the local appliance filesystem.
 
-Normal login/logout now exist, but role authorization and origin/CSRF protections are not complete. No configuration commit, network control, radio control, or secret-read endpoint is exposed before that middleware exists.
+Normal login/logout and browser-origin filtering exist. Role authorization middleware exists but no protected configuration/network/radio mutation endpoint is exposed yet. HTTPS/WSS, trusted reverse-proxy rules, Secure-cookie deployment, and future device credentials remain separate work.
 
 ## Current implementation status
 
@@ -199,9 +211,10 @@ Normal login/logout now exist, but role authorization and origin/CSRF protection
 - [x] Local `sudo ywd-dmr claim-code` maintenance command.
 - [x] Installed-appliance exercise of one-time claim, code deletion, claimed restart, and session behavior.
 - [x] Administrator password-login/logout implementation with generic failures and in-memory throttling.
-- [ ] Installed-appliance validation of login after restart, wrong credentials, throttle, logout, and restart-cleared sessions.
-- [ ] Observer / Operator / Admin middleware and authorization tests.
-- [ ] Origin/CSRF protection for authenticated browser mutations.
+- [x] Installed-appliance validation of login after restart, generic failures, throttle, logout, and restart-cleared sessions.
+- [x] Observer / Operator / Admin role hierarchy and reusable server-side authorization middleware.
+- [x] Browser Origin / `Sec-Fetch-Site` mutation protection implementation and automated tests.
+- [ ] Installed-appliance validation of role/origin security slice.
 - [ ] Protected configuration validate/test/commit API.
 - [ ] WebUI first-run wizard.
 
