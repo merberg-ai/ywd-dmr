@@ -17,7 +17,7 @@ Mutating radio controls are intentionally absent until authentication, authoriza
 
 ## Browser mutation rule
 
-State-changing browser requests now pass through a global same-origin check before the API endpoint runs. The protected HTTP methods are:
+State-changing browser requests pass through a global same-origin check before the API endpoint runs. The protected HTTP methods are:
 
 ```text
 POST
@@ -30,15 +30,15 @@ For requests that include browser origin metadata:
 
 - `Origin`, when present, must match the request scheme and Host;
 - `Sec-Fetch-Site`, when present, must be `same-origin` or `none`;
-- cross-site and same-site/different-origin browser mutation requests return HTTP `403` with a generic same-origin-required response.
+- cross-site and same-site/different-origin browser mutation requests return HTTP `403` with `{"error":"same-origin request required"}`.
 
 Read-only GET requests are not rejected by this browser-mutation filter. Direct non-browser API clients such as curl normally send neither `Origin` nor `Sec-Fetch-Site` and remain supported.
 
-YWD-DMR does not currently trust forwarded proxy headers for this decision. HTTPS reverse-proxy support needs an explicit trusted-proxy contract before it is considered production supported.
+This behavior is real-machine validated on the Raspberry Pi 5. YWD-DMR does not currently trust forwarded proxy headers for this decision. HTTPS reverse-proxy support needs an explicit trusted-proxy contract before it is considered production supported.
 
 ## Role authorization contract
 
-The first protected-operation hierarchy is:
+The protected-operation hierarchy is:
 
 ```text
 Observer < Operator < Admin
@@ -46,7 +46,7 @@ Observer < Operator < Admin
 
 Unknown roles fail closed. Protected handlers require a live opaque session, enforce their minimum server-side role, return HTTP `401` for missing/invalid authentication and HTTP `403` for insufficient role, and receive the authenticated principal through request context.
 
-The first claimed account is Admin. Operator/Observer account management is not exposed yet; the role model and middleware exist before protected configuration/radio operations are opened.
+The first claimed account is Admin. Operator/Observer account management is not exposed yet.
 
 ## Setup status
 
@@ -71,7 +71,7 @@ A new unclaimed installation with no readable known-good configuration reports:
 }
 ```
 
-Configuration state may be `missing`, `loaded`, `recovered`, or `error`. After the installation is claimed, daemon-owned `stage`/`next_step` values move to `claimed`/`identity` when identity is missing, or `identity_complete`/`network` when a known-good identity is already present.
+Configuration state may be `missing`, `loaded`, `recovered`, or `error`. After the installation is claimed, daemon-owned `stage`/`next_step` values move to `claimed`/`identity` when identity is missing, or `identity_complete`/`network` when a known-good identity is present.
 
 Other methods return HTTP `405` with `Allow: GET`.
 
@@ -117,7 +117,7 @@ Claim failure behavior:
 
 A successful durable claim consumes the bootstrap path. Reusing the claim request returns `409`, and daemon startup never regenerates a claim code merely because the old plaintext code is gone.
 
-The full installed claim path has been validated on the Raspberry Pi 5, including durable claimed restart behavior, one-time code deletion/reuse rejection, and memory-only session invalidation after restart.
+The full installed claim path has been validated on the Raspberry Pi 5.
 
 ## Administrator login
 
@@ -148,7 +148,7 @@ A successful login returns HTTP `200` with non-secret session metadata:
 
 The new opaque session token is set only in the `ywd_dmr_session` HttpOnly cookie. It is never returned in JSON. Sessions remain memory-only and are therefore cleared by daemon restart.
 
-The login verifier uses the persisted PBKDF2-HMAC-SHA256 administrator password record created during claim. Wrong username and wrong password both return the same generic response:
+Wrong username and wrong password both return:
 
 ```text
 HTTP 401
@@ -172,10 +172,6 @@ While blocked, login returns HTTP `429` with `Retry-After` and:
 }
 ```
 
-The throttle is memory-only and currently uses the direct TCP peer address. It deliberately does not trust `X-Forwarded-For`; proxy-aware behavior will be defined together with the future HTTPS/reverse-proxy deployment contract.
-
-If the installation has not yet been claimed, login returns HTTP `409` with `{"error":"installation is not claimed"}`. Malformed or unknown JSON returns HTTP `400`. Other methods return HTTP `405` with `Allow: POST`.
-
 The installed Pi 5 login path is validated, including generic wrong-credential behavior, successful restart login, logout invalidation, five-failure throttling, `429`/`Retry-After`, restart-cleared sessions/throttle, and durable admin persistence.
 
 ## Administrator logout
@@ -194,7 +190,7 @@ Other methods return HTTP `405` with `Allow: POST`.
 GET /api/v1/auth/session
 ```
 
-This endpoint reports whether the request carries a currently valid in-memory session cookie. Unauthenticated/expired/missing-cookie requests return HTTP `200` with:
+Unauthenticated/expired/missing-cookie requests return HTTP `200` with:
 
 ```json
 {
@@ -213,7 +209,7 @@ A valid session returns only:
 }
 ```
 
-The token itself is never echoed. Current sessions are intentionally memory-only, so daemon restart invalidates them while the durable claimed/admin state remains.
+The token itself is never echoed.
 
 ## Setup validation
 
@@ -223,6 +219,8 @@ The token itself is never echoed. Current sessions are intentionally memory-only
 POST /api/v1/setup/identity/validate
 Content-Type: application/json
 ```
+
+This endpoint is public and deliberately non-mutating. It exists so setup clients can normalize and validate form input without changing durable state.
 
 Request:
 
@@ -248,9 +246,7 @@ Successful transport with valid fields:
 }
 ```
 
-A syntactically valid request with invalid setup fields still returns HTTP `200` because field validation is a normal result. The response contains `valid: false` and one or more field errors containing `field`, `code`, and a plain-language `message`.
-
-Malformed JSON, unknown JSON fields, multiple top-level JSON values, or an oversized request return HTTP `400`. Other methods return HTTP `405` with `Allow: POST`.
+A syntactically valid request with invalid setup fields still returns HTTP `200` because field validation is a normal result. Malformed JSON, unknown JSON fields, multiple top-level JSON values, or an oversized request return HTTP `400`.
 
 Current validation rules:
 
@@ -258,9 +254,69 @@ Current validation rules:
 - Base DMR ID must be from 1 through 9999999.
 - ESSID must be from 0 through 99.
 
-This endpoint is deliberately **non-mutating**. It does not save the values. The role/origin security layer now exists, but configuration commits remain absent until that layer is installed-machine validated and wired into the known-good transaction API.
+### Commit station identity
 
-See [Setup and Security Phase](../developers/setup-security-phase.md) and [Authorization and Browser Mutation Protection](../developers/authorization-model.md) for the current security contract.
+```text
+POST /api/v1/setup/identity/commit
+Content-Type: application/json
+```
+
+This is the first normal protected setup mutation. It requires a live **Admin** session and is also subject to the global browser same-origin rule.
+
+Request:
+
+```json
+{
+  "callsign": "N0CALL",
+  "dmr_id": 1234567,
+  "essid": 1
+}
+```
+
+The daemon treats the request as an untrusted configuration candidate. It normalizes and validates the identity, commits it through the existing known-good configuration store, then advances daemon setup state only after durable commit succeeds.
+
+A successful first commit returns HTTP `200`:
+
+```json
+{
+  "committed": true,
+  "revision": 1,
+  "identity": {
+    "callsign": "N0CALL",
+    "dmr_id": 1234567,
+    "essid": 1
+  }
+}
+```
+
+Subsequent successful commits increment the known-good revision and rotate the prior known-good snapshot using the existing configuration-store rules.
+
+Failure behavior:
+
+- missing or invalid session -> HTTP `401` with `{"error":"authentication required"}`;
+- authenticated principal below Admin -> HTTP `403` with `{"error":"forbidden"}`;
+- browser cross-origin mutation -> HTTP `403` with `{"error":"same-origin request required"}`;
+- malformed/unknown JSON -> HTTP `400`;
+- invalid identity candidate -> HTTP `400` with `error: invalid configuration candidate` and field errors;
+- durable configuration-store failure -> HTTP `500` with a generic commit-failed response.
+
+An invalid or unauthorized request must not replace the current known-good configuration or advance runtime setup state.
+
+Identity has no external network dependency to test, so this transaction is:
+
+```text
+candidate -> normalize/validate -> durable commit
+```
+
+BrandMeister/network settings will later use the fuller path:
+
+```text
+candidate -> validate -> connectivity test -> commit
+```
+
+The identity-commit implementation and automated tests are on `dev`; installed Raspberry Pi validation is the next gate.
+
+See [Setup and Security Phase](../developers/setup-security-phase.md), [Known-good Configuration Store](../developers/configuration-store.md), and [Authorization and Browser Mutation Protection](../developers/authorization-model.md).
 
 ## Planned rules
 
