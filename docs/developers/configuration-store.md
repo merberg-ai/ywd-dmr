@@ -33,7 +33,7 @@ Schema 1 currently contains only normalized radio identity:
 
 `schema` and `revision` are daemon-owned. A setup client submits candidate values; it does not choose either field.
 
-BrandMeister/network configuration is **not** being silently added to schema 1. The network commit will make an explicit schema/migration decision after the real connectivity tester exists.
+BrandMeister/network configuration is **not** being silently added to schema 1. The network commit will make an explicit schema/migration decision only after the real connectivity tester is proven on the installed appliance.
 
 ## Commit rules
 
@@ -106,8 +106,6 @@ corrupt current revision 2 + restart
 
 Both real snapshot files were mode `0600` and owned by `ywd-dmr:ywd-dmr`.
 
-This is important: startup recovery has now been proven using the **same previous snapshot created by a real authenticated API update**, not merely a hand-written fixture.
-
 See [Protected Station-Identity Commit Validation Notes](identity-commit-validation-notes.md).
 
 ## Network configuration rule
@@ -121,11 +119,31 @@ candidate
   -> commit
 ```
 
-The protected network-validation endpoint now exists, but it does not write this store. The future network test must prove the master/login/auth/config path before any network candidate can become known-good.
+The protected local validator is installed-machine validated:
 
-A failed network test must not increment the revision or alter current/previous snapshots.
+```text
+POST /api/v1/setup/network/validate
+```
 
-See [DMR Network Backend and BrandMeister Setup Contract](network-backend-contract.md).
+The real non-persisting tester is now implemented on `dev`:
+
+```text
+POST /api/v1/setup/network/test
+```
+
+Both routes are deliberately outside the durable commit path. `/network/test` reads the already-known-good identity, performs the bounded temporary BrandMeister/Homebrew handshake, returns only a non-secret result, and then closes the temporary network session.
+
+A network test — successful or failed — must not:
+
+- increment the known-good revision;
+- create or rotate `known-good.previous.json`;
+- add network fields to schema 1;
+- persist the BrandMeister password;
+- advance setup state.
+
+Only a later explicit tested **network commit** may alter durable state.
+
+See [DMR Network Backend and BrandMeister Setup Contract](network-backend-contract.md) and [BrandMeister Candidate Validation Notes](network-validation-notes.md).
 
 ## Startup and recovery behavior
 
@@ -158,7 +176,7 @@ When network secrets are added:
 - candidates may replace a secret but normal clients must not retrieve it;
 - filesystem ownership/mode remains part of the security boundary;
 - commit APIs remain protected by daemon-side authorization;
-- test results and logs must never expose the submitted password.
+- validation/test results and logs must never expose the submitted password.
 
 ## Current implementation status
 
@@ -172,11 +190,9 @@ When network secrets are added:
 - [x] Daemon startup missing/loaded/recovered/error state.
 - [x] Read-only setup status without stored identity disclosure.
 - [x] Admin-protected identity commit through this same store.
-- [x] Automated authorization/mutation/revision tests.
-- [x] Installed Pi 5 revision `1 -> 2` and previous-snapshot rotation.
-- [x] Installed Pi 5 invalid-candidate hash preservation.
-- [x] Installed Pi 5 restart persistence.
-- [x] Installed Pi 5 recovery from the API-created previous snapshot.
+- [x] Installed Pi 5 revision `1 -> 2`, invalid-candidate preservation, restart persistence, and previous-snapshot recovery.
+- [x] Installed Pi 5 proof that protected network candidate validation changes no known-good state.
+- [x] Real non-persisting BrandMeister test endpoint implemented without changing schema 1.
+- [ ] Pi proof that live BrandMeister test success/failure leaves this store unchanged.
 - [ ] Explicit schema/migration design for network configuration.
-- [ ] BrandMeister network candidate real test before commit.
 - [ ] Protected tested network commit through this same store.
