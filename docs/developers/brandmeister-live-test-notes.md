@@ -1,6 +1,6 @@
 # BrandMeister Live Test Notes
 
-This page records the first installed Raspberry Pi 5 exercise of the real, non-persisting BrandMeister/Homebrew setup probe.
+This page records the installed Raspberry Pi 5 exercise of the real, non-persisting BrandMeister/Homebrew setup probe.
 
 ## Checkpoint
 
@@ -52,9 +52,9 @@ The `.invalid` test result was:
 }
 ```
 
-## First real BrandMeister contact
+## First real BrandMeister contact — authentication rejection
 
-The first public-network test used:
+The public-network tests used:
 
 ```text
 master: 3103.master.brandmeister.network
@@ -66,62 +66,118 @@ derived Homebrew device ID: 319610402
 
 The Hotspot Security password was entered locally and was not printed or pasted into development notes.
 
-Result:
+The first attempt returned:
 
 ```json
 {
   "ok": false,
   "backend": "brandmeister",
   "reason": "auth",
-  "message": "BrandMeister rejected the hotspot security password.",
   "duration_ms": 250
 }
 ```
 
-This result is important because it proves the temporary tester reached the real master and completed the initial `RPTL` login stage. BrandMeister accepted the derived hotspot/device ID sufficiently to return the login acknowledgement and salt. The failure occurred specifically after YWD-DMR sent the `RPTK` authentication response.
+That proved the temporary tester reached the real master, completed `RPTL`, and received the challenge salt. The failure occurred after `RPTK`.
 
-## Upstream protocol cross-check
+## Authentication wire-format cross-check
 
-After the live `auth` result, the YWD-DMR `RPTK` construction was compared against the current G4KLX DMRGateway implementation.
+The YWD-DMR `RPTK` construction was compared against the current G4KLX DMRGateway implementation.
 
-The upstream implementation:
+Both implementations:
 
-1. copies the four salt bytes directly from `RPTACK` offset 6;
-2. appends the Hotspot Security password bytes;
-3. SHA-256 hashes exactly `salt || password`;
-4. sends `RPTK` + four-byte Homebrew device ID + the 32-byte SHA-256 digest.
+1. copy the four salt bytes directly from `RPTACK` offset 6;
+2. append the Hotspot Security password bytes;
+3. SHA-256 hash exactly `salt || password`;
+4. send `RPTK` + four-byte Homebrew device ID + the 32-byte SHA-256 digest.
 
-YWD-DMR performs the same byte sequence. The current evidence therefore does not indicate a YWD-DMR wire-format defect at the authentication stage.
+BrandMeister documentation also distinguishes Hotspot Security from the SelfCare account-login password. The Hotspot Security value is case-sensitive and is associated with the base Radio ID; alias/ESSID hotspot IDs use the same base-ID hotspot credential.
 
-BrandMeister documentation also distinguishes the Hotspot Security password from the SelfCare login password. The Hotspot Security value is case-sensitive and is associated with the base Radio ID; alias/ESSID hotspot IDs use the same base-ID hotspot credential.
+## Second real BrandMeister contact — authentication accepted
 
-## Interpretation
+The operator retried with the verified Hotspot Security credential. Result:
+
+```json
+{
+  "ok": false,
+  "backend": "brandmeister",
+  "reason": "config",
+  "message": "BrandMeister rejected the software-endpoint configuration.",
+  "duration_ms": 289
+}
+```
+
+This is a major protocol milestone. `reason: config` is only possible after BrandMeister has accepted:
+
+```text
+RPTL device-ID login       PASS
+RPTACK challenge/salt      PASS
+RPTK password response     PASS
+RPTACK authentication      PASS
+RPTC configuration         REJECTED
+```
+
+The Hotspot Security authentication path is therefore now real-network proven.
+
+The retry again proved that the live test is non-persisting:
+
+- known-good revision 1 remained byte-for-byte unchanged;
+- no previous/rollback snapshot was created;
+- cleanup restored fresh unclaimed/missing-config state;
+- final daemon health passed.
+
+## Configuration rejection analysis
+
+YWD-DMR's original test `RPTC` packet was structurally correct and 302 bytes long, but deliberately reported:
+
+```text
+RX frequency: 000000000
+TX frequency: 000000000
+Power:        00
+Slots:        4 (simplex/DMO)
+```
+
+Current BrandMeister hotspot guidance expects valid RX/TX frequency metadata for Homebrew/MMDVM registration. OpenSpot guidance specifically tells simplex users to enter the same valid UHF amateur frequency in both receive and transmit fields.
+
+The next YWD-DMR slice therefore changes the network candidate to include:
+
+```text
+registration_frequency_hz
+```
+
+This is explicit Homebrew/BrandMeister registration metadata. It does **not** mean YWD-DMR has gained an RF transmitter or that the daemon will key RF.
+
+For the compatibility `RPTC` packet YWD-DMR will:
+
+- place the operator-supplied registration frequency in both RX and TX fields;
+- use informational power `01` rather than zero;
+- retain color code `01`;
+- retain slot/mode marker `4` for simplex/DMO-style registration;
+- retain zero location/height unless real station-location settings are added later;
+- still send no `DMRD` voice/data during the setup test.
+
+No frequency is silently invented by the daemon. The operator supplies the nominal registration frequency explicitly.
+
+## Current interpretation
 
 Current status is:
 
 ```text
-DNS/UDP path             PASS
-RPTL device-ID login     PASS
-RPTACK salt receipt      PASS
-RPTK packet construction cross-checked against upstream
-RPTK authentication      REJECTED BY MASTER
-RPTC software config     NOT REACHED
-RPTCL success close      NOT REACHED
-network persistence      NOT ATTEMPTED
+DNS/UDP path                 PASS
+RPTL device-ID login         PASS
+RPTACK salt receipt          PASS
+RPTK wire construction       CROSS-CHECKED
+RPTK authentication          PASS
+RPTC zero-frequency metadata REJECTED
+network-test non-persistence PASS
+DMR voice/data transmission  NOT ATTEMPTED
+network persistence          NOT ATTEMPTED
 ```
 
-The next operator test should use the exact BrandMeister **Hotspot Security** password configured for base DMR ID `3196104`. It should not use the BrandMeister/SelfCare account-login password. If the Hotspot Security password is uncertain, reset it in BrandMeister SelfCare and then enter the new value into the YWD-DMR test locally.
-
-A successful retry should move the probe past `auth` to either:
-
-- `ok` — login, authentication, and software endpoint configuration all accepted; or
-- `config` — login and Hotspot Security authentication succeeded, but BrandMeister rejected YWD-DMR's current zero-RF software-endpoint `RPTC` representation.
-
-Either result would advance the protocol validation significantly.
+The next installed-machine gate is a focused live handshake using a real registration frequency in the `RPTC` metadata. If BrandMeister returns `ok`, the complete login/auth/config probe is proven and network-schema/commit work may begin. If it still returns `config`, the remaining RPTC fields need to be narrowed further.
 
 ## Safety result
 
-The live public-network attempt did **not** persist the master, password, backend, or test result. It did not increment the known-good revision or create a rollback snapshot. No DMR voice/data frame was transmitted.
+Neither public-network attempt persisted the master, password, backend, registration metadata, or test result. Neither incremented the known-good revision or created a rollback snapshot. No DMR voice/data frame was transmitted.
 
 This preserves the Alpha1 transaction rule:
 
