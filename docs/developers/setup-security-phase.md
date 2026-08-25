@@ -72,7 +72,7 @@ This runtime path was exercised on the installed Raspberry Pi 5. The daemon corr
 
 ### 4. One-time installation claim
 
-A fresh installation now has a real bootstrap security state.
+A fresh installation has a real bootstrap security state.
 
 When no valid `/var/lib/ywd-dmr/security.json` exists, the daemon creates a 120-bit one-time claim code in:
 
@@ -86,7 +86,7 @@ The file is mode `0600` inside the restricted state directory and is intended to
 sudo ywd-dmr claim-code
 ```
 
-The development claim API is:
+The claim API is:
 
 ```text
 POST /api/v1/setup/claim
@@ -108,28 +108,44 @@ Claim is deliberately one-time. Once the durable security document exists, claim
 
 The stored password record includes its algorithm, salt, and iteration count so the verifier can be upgraded later without guessing which KDF produced an old record. No plaintext administrator password is stored.
 
+Installed-appliance validation on the Raspberry Pi 5 is complete. The successful real claim returned HTTP `201`, created `security.json` as `0600 ywd-dmr:ywd-dmr`, deleted the plaintext claim code, authenticated the new cookie session, rejected claim reuse with `409`, preserved claimed state across daemon restart, discarded the memory-only session on restart, and did not regenerate a claim code on the claimed appliance. Intentional cleanup returned the box to a healthy unclaimed state with a fresh code. The first Pi 5 claim/PBKDF2 timing measurement was `0.516708s`.
+
+See [One-time Claim Validation Notes](claim-validation-notes.md) for the exact real-machine results.
+
 ### 5. Administrator login and protected authorization
 
-The current claim slice creates the first administrator and an initial browser session, but normal password login after a daemon restart is intentionally the next slice.
+Normal administrator password login after a daemon restart is now implemented on `dev` and is the active real-machine validation slice.
 
-The planned authentication layer must add:
+Implemented endpoints:
 
-- password verification against the persisted administrator record;
-- login throttling/rate limiting;
-- explicit logout/session invalidation;
+```text
+POST /api/v1/auth/login
+POST /api/v1/auth/logout
+GET  /api/v1/auth/session
+```
+
+`POST /api/v1/auth/login` verifies the supplied password against the persisted PBKDF2-HMAC-SHA256 record. Username comparison and password verification use the same generic invalid-credential response so the normal failure path does not disclose whether a username or password was wrong. The password KDF is still evaluated when the username is wrong, avoiding a cheap timing oracle.
+
+A successful login creates a fresh opaque session token, stores only its hash in daemon memory, and sets the token only in the HttpOnly `SameSite=Strict` cookie. Restarting the daemon clears all sessions while leaving the durable claimed/admin state intact.
+
+The first login throttle is intentionally small and understandable for an appliance UI:
+
+```text
+5 failed logins from one direct client IP inside 5 minutes
+-> block further login attempts from that IP for 60 seconds
+```
+
+The throttle is memory-only and does not create a persistent lockout database. The daemon currently keys this from the direct TCP peer address and does not trust `X-Forwarded-For`; proxy-aware deployment rules will be defined when HTTPS/reverse-proxy support is introduced.
+
+`POST /api/v1/auth/logout` invalidates the current in-memory session, when present, and expires the browser cookie. Logout is idempotent from the client's point of view.
+
+Automated tests cover restart login from the persisted verifier, fresh-session creation, generic wrong-username/wrong-password behavior, login/logout HTTP behavior, session invalidation, method enforcement, and throttle state transitions. Real installed-appliance validation is still required before this login slice is marked complete.
+
+The next authorization layer must add:
+
 - server-side authorization middleware;
 - Observer / Operator / Admin roles;
 - origin/CSRF protections for authenticated mutating browser requests.
-
-Sessions are memory-only in the current claim slice. Restarting the daemon therefore invalidates browser sessions rather than persisting a reusable browser token to disk.
-
-The current read-only session inspection endpoint is:
-
-```text
-GET /api/v1/auth/session
-```
-
-It reports whether the HttpOnly cookie maps to a live session and, when authenticated, returns only username, role, and expiry metadata.
 
 ### 6. Protected configuration commit APIs
 
@@ -161,9 +177,9 @@ The WebUI becomes a client of the same setup APIs used by future Android/CLI cli
 
 The current LAN test dashboard is still not a production-authenticated interface. Do **not** router-forward or publicly expose it.
 
-The identity-validation endpoint is callable without authentication because it only normalizes caller-supplied non-secret data and changes no state. `GET /api/v1/setup/status` exposes only coarse setup/configuration health metadata. `POST /api/v1/setup/claim` is the one deliberate unauthenticated mutation and requires the high-entropy bootstrap code available only from the local appliance filesystem.
+The identity-validation endpoint is callable without authentication because it only normalizes caller-supplied non-secret data and changes no state. `GET /api/v1/setup/status` exposes only coarse setup/configuration health metadata. `POST /api/v1/setup/claim` is the one deliberate unauthenticated setup mutation and requires the high-entropy bootstrap code available only from the local appliance filesystem.
 
-No configuration commit, network control, radio control, or secret-read endpoint is exposed before login/authorization middleware exists.
+Normal login/logout now exist, but role authorization and origin/CSRF protections are not complete. No configuration commit, network control, radio control, or secret-read endpoint is exposed before that middleware exists.
 
 ## Current implementation status
 
@@ -181,9 +197,11 @@ No configuration commit, network control, radio control, or secret-read endpoint
 - [x] `POST /api/v1/setup/claim` with one-time semantics and opaque HttpOnly session cookie.
 - [x] `GET /api/v1/auth/session` for read-only current-session inspection.
 - [x] Local `sudo ywd-dmr claim-code` maintenance command.
-- [ ] Installed-appliance exercise of one-time claim, code deletion, claimed restart, and session behavior.
-- [ ] Administrator password login after restart plus throttling.
+- [x] Installed-appliance exercise of one-time claim, code deletion, claimed restart, and session behavior.
+- [x] Administrator password-login/logout implementation with generic failures and in-memory throttling.
+- [ ] Installed-appliance validation of login after restart, wrong credentials, throttle, logout, and restart-cleared sessions.
 - [ ] Observer / Operator / Admin middleware and authorization tests.
+- [ ] Origin/CSRF protection for authenticated browser mutations.
 - [ ] Protected configuration validate/test/commit API.
 - [ ] WebUI first-run wizard.
 
