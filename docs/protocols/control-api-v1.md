@@ -15,6 +15,39 @@ Currently implemented and read-only:
 
 Mutating radio controls are intentionally absent until authentication, authorization, PTT leases, and TX timeout behavior exist.
 
+## Browser mutation rule
+
+State-changing browser requests now pass through a global same-origin check before the API endpoint runs. The protected HTTP methods are:
+
+```text
+POST
+PUT
+PATCH
+DELETE
+```
+
+For requests that include browser origin metadata:
+
+- `Origin`, when present, must match the request scheme and Host;
+- `Sec-Fetch-Site`, when present, must be `same-origin` or `none`;
+- cross-site and same-site/different-origin browser mutation requests return HTTP `403` with a generic same-origin-required response.
+
+Read-only GET requests are not rejected by this browser-mutation filter. Direct non-browser API clients such as curl normally send neither `Origin` nor `Sec-Fetch-Site` and remain supported.
+
+YWD-DMR does not currently trust forwarded proxy headers for this decision. HTTPS reverse-proxy support needs an explicit trusted-proxy contract before it is considered production supported.
+
+## Role authorization contract
+
+The first protected-operation hierarchy is:
+
+```text
+Observer < Operator < Admin
+```
+
+Unknown roles fail closed. Protected handlers require a live opaque session, enforce their minimum server-side role, return HTTP `401` for missing/invalid authentication and HTTP `403` for insufficient role, and receive the authenticated principal through request context.
+
+The first claimed account is Admin. Operator/Observer account management is not exposed yet; the role model and middleware exist before protected configuration/radio operations are opened.
+
 ## Setup status
 
 ```text
@@ -143,6 +176,8 @@ The throttle is memory-only and currently uses the direct TCP peer address. It d
 
 If the installation has not yet been claimed, login returns HTTP `409` with `{"error":"installation is not claimed"}`. Malformed or unknown JSON returns HTTP `400`. Other methods return HTTP `405` with `Allow: POST`.
 
+The installed Pi 5 login path is validated, including generic wrong-credential behavior, successful restart login, logout invalidation, five-failure throttling, `429`/`Retry-After`, restart-cleared sessions/throttle, and durable admin persistence.
+
 ## Administrator logout
 
 ```text
@@ -223,16 +258,16 @@ Current validation rules:
 - Base DMR ID must be from 1 through 9999999.
 - ESSID must be from 0 through 99.
 
-This endpoint is deliberately **non-mutating**. It does not save the values. Configuration commits remain blocked until server-side role authorization and browser mutation protections are implemented.
+This endpoint is deliberately **non-mutating**. It does not save the values. The role/origin security layer now exists, but configuration commits remain absent until that layer is installed-machine validated and wired into the known-good transaction API.
 
-See [Setup and Security Phase](../developers/setup-security-phase.md) for the ordering of persistence, claim/auth, roles, and setup commits.
+See [Setup and Security Phase](../developers/setup-security-phase.md) and [Authorization and Browser Mutation Protection](../developers/authorization-model.md) for the current security contract.
 
 ## Planned rules
 
 - JSON request/response for normal control operations.
 - Server-side authorization on every protected operation.
-- Origin/CSRF protection for authenticated browser mutations.
 - Observer / Operator / Admin role enforcement.
+- Browser same-origin protection for state-changing requests.
 - Opaque browser sessions and separately revocable device credentials.
 - Secrets may be replaced but are never returned to a client after storage.
 - Capability discovery is preferred over hard-coding server version checks in Android/WebUI.
