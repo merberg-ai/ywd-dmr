@@ -40,8 +40,8 @@ Usage:
 Options:
   --port PORT       Frontend/API TCP port (default: 8989)
   --local           Listen on this computer only (127.0.0.1)
-  --lan-test        Listen on the local network (0.0.0.0). WARNING: the current
-                    development dashboard does not have authentication yet.
+  --lan-test        Listen on the local network (0.0.0.0). WARNING: development
+                    security is incomplete; do not expose this service publicly.
   --no-firewall     Do not add or change a firewall rule.
   --ufw-source CIDR Override the automatically detected LAN subnet used for a
                     UFW rule, for example 192.168.1.0/24.
@@ -234,12 +234,13 @@ if port_busy "$PORT" && [ "$OWN_SERVICE_ON_PORT" -ne 1 ]; then
 fi
 
 if [ -z "$BIND_ADDR" ]; then
-  # Until authentication lands, safe default is loopback only.
+  # Until production HTTPS/authorization lands, safe default is loopback only.
   BIND_ADDR=127.0.0.1
 fi
 
 if [ "$BIND_ADDR" = 0.0.0.0 ]; then
-  warn "LAN TEST MODE exposes the current unauthenticated development dashboard to your local network."
+  warn "LAN TEST MODE exposes the current development dashboard to your local network."
+  warn "Authentication exists, but production HTTPS/authorization hardening is incomplete."
   warn "Do not forward port $PORT from your router and do not expose this service to the public internet."
   if [ "$ASSUME_YES" -ne 1 ]; then
     printf 'Continue with LAN test mode? [y/N] '
@@ -476,7 +477,7 @@ log "Firewall: $FIREWALL_RESULT"
 if [ "$BIND_ADDR" = 0.0.0.0 ] && [ -n "$HOST_IP" ]; then
   log "Open:     http://$HOST_IP:$PORT/"
   log ""
-  warn "This is LAN TEST MODE with no dashboard authentication yet."
+  warn "This is LAN TEST MODE. Authentication exists, but the development interface is not ready for public exposure."
 else
   log "Open:     http://127.0.0.1:$PORT/"
 fi
