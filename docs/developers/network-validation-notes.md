@@ -56,7 +56,7 @@ An authenticated cross-origin request returned HTTP `403` with:
 
 No submitted password appeared in either response.
 
-### Valid candidate normalization
+### Valid candidate normalization at this checkpoint
 
 The Admin request intentionally used mixed case, surrounding whitespace, a trailing hostname dot, and master port `0`:
 
@@ -84,7 +84,7 @@ The installed API returned HTTP `200` and normalized the non-secret fields to:
 
 The submitted password was not echoed anywhere in the response.
 
-### Invalid candidate
+### Invalid candidate at this checkpoint
 
 A candidate containing an unsupported backend, URL/path instead of a master hostname, port `70000`, and an empty password returned HTTP `200` with `valid: false` and field errors for all four fields:
 
@@ -127,6 +127,24 @@ The overall result was:
 PASS: protected BrandMeister candidate validation
 ```
 
+## Contract evolution after the historical validation run
+
+This page preserves the exact request shape that was tested at checkpoint `1edb37f`.
+
+Later real BrandMeister testing reached and passed Hotspot Security authentication but received `reason: config` when the original RPTC registration reported zero RX frequency, zero TX frequency, and zero power.
+
+The **current** `dev` candidate therefore adds:
+
+```text
+registration_frequency_hz
+```
+
+Current validation treats this as a fifth field. It must be a nominal Homebrew registration frequency from `100000000` through `999999999` Hz. The live tester reports that operator-supplied value in both RX and TX fields for the simplex/software RPTC registration.
+
+This new field is non-secret and is returned in the normalized validation summary. It is still not persisted by `/network/validate` or `/network/test`.
+
+See [BrandMeister Live Test Notes](brandmeister-live-test-notes.md) and [DMR Network Backend and BrandMeister Setup Contract](network-backend-contract.md) for the current request shape and rationale.
+
 ## Next gate
 
-The next slice is a **real but non-persisting** BrandMeister Homebrew test. It must perform a bounded temporary `RPTL -> RPTK -> RPTC` handshake, classify login/auth/config/timeout/network failures, explicitly close the temporary session, transmit no `DMRD` traffic, return no password/challenge material, and leave known-good state untouched regardless of success or failure.
+The active next gate is the focused RPTC compatibility retest using the operator-supplied registration frequency. It remains non-persisting and transmits no `DMRD` traffic.
