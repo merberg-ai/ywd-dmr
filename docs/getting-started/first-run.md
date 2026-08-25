@@ -1,6 +1,6 @@
 # First-run Setup
 
-The production browser wizard is not complete yet, but the daemon-side setup flow now includes station-identity validation, durable configuration-state reporting, the one-time installation claim path, and normal administrator login/logout.
+The production browser wizard is not complete yet, but the daemon-side setup flow now includes station-identity validation, durable configuration-state reporting, the one-time installation claim path, normal administrator login/logout, and the first server-side authorization/browser-origin layer.
 
 The finished wizard will use large, plain-language steps:
 
@@ -69,11 +69,11 @@ The username is normalized to lowercase and must be 3 to 32 letters, numbers, do
 
 A successful claim creates the first administrator, removes the usable one-time bootstrap path, and establishes an opaque browser session in an HttpOnly cookie. The cookie token is never returned in the JSON response.
 
-The complete claim lifecycle has now been exercised on the installed Raspberry Pi 5: successful claim, code removal, one-time reuse rejection, durable claimed restart, memory-only session loss on restart, no claim-code regeneration while claimed, and clean return to an unclaimed test state all passed.
+The complete claim lifecycle has been exercised on the installed Raspberry Pi 5: successful claim, code removal, one-time reuse rejection, durable claimed restart, memory-only session loss on restart, no claim-code regeneration while claimed, and clean return to an unclaimed test state all passed.
 
 ### Administrator login after restart
 
-A claimed appliance can now create a new browser session with:
+A claimed appliance can create a new browser session with:
 
 ```text
 POST /api/v1/auth/login
@@ -91,7 +91,7 @@ Request shape:
 
 The daemon verifies the password against the PBKDF2 password record stored during claim. Wrong username and wrong password deliberately produce the same generic authentication failure.
 
-A successful login creates a fresh opaque HttpOnly `SameSite=Strict` session cookie. The cookie token is never included in JSON. Sessions are still memory-only, so restarting `ywd-dmrd` intentionally logs the browser out without forgetting the administrator account.
+A successful login creates a fresh opaque HttpOnly `SameSite=Strict` session cookie. The cookie token is never included in JSON. Sessions are memory-only, so restarting `ywd-dmrd` intentionally logs the browser out without forgetting the administrator account.
 
 Repeated failed logins from one direct client IP are throttled. Five failures inside five minutes cause a 60-second login block for that IP. This limiter is memory-only and currently uses the direct network peer address rather than trusting proxy forwarding headers.
 
@@ -107,7 +107,21 @@ It invalidates the current in-memory session and expires the browser cookie. Cur
 GET /api/v1/auth/session
 ```
 
-The login/logout implementation is on `dev` with automated tests; installed-appliance validation is the next step before it is considered complete.
+The complete normal-login slice is installed-machine validated on the Raspberry Pi 5, including generic wrong-credential responses, successful login after restart, logout invalidation, five-failure throttling, `429`/`Retry-After`, restart-cleared sessions/throttle, and final cleanup/health.
+
+### Roles and browser safety
+
+The current server-side role hierarchy is:
+
+```text
+Observer < Operator < Admin
+```
+
+The first claimed account is Admin. Operator/Observer account management is not exposed yet, but protected handlers can already require a minimum role and unknown role strings fail closed.
+
+State-changing browser requests (`POST`, `PUT`, `PATCH`, and `DELETE`) now pass through a same-origin check. Browser `Origin`, when present, must match the request scheme/Host, and `Sec-Fetch-Site`, when present, must be `same-origin` or `none`. Cross-origin browser mutations are rejected before the endpoint runs. Plain command-line/API clients remain usable without pretending to be browsers.
+
+This authorization/origin slice has automated tests on `dev`; installed Pi 5 validation is the current test step.
 
 ### Station identity validation
 
@@ -123,12 +137,12 @@ The validation endpoint is:
 POST /api/v1/setup/identity/validate
 ```
 
-It does not save the values. Configuration commits remain blocked until server-side role authorization and browser origin/CSRF protections are implemented.
+It does not save the values. Configuration commits remain blocked until the current role/origin slice is installed-machine validated and then wired into the known-good transaction API.
 
 ## Current safety note
 
-The current LAN test build is still development software. Normal login/logout now exist, but authorization middleware and browser mutation protection are not finished. Keep it on a trusted local network only. Do not forward the YWD-DMR frontend port through a router or expose it directly to the public internet.
+The current LAN test build is still development software. Claim and normal administrator login are validated, and the first role/browser-origin layer exists, but production HTTPS/WSS, trusted reverse-proxy behavior, Secure-cookie deployment, and the protected configuration/control surface are not finished. Keep it on a trusted local network only. Do not forward the YWD-DMR frontend port through a router or expose it directly to the public internet.
 
-The one-time claim endpoint is intentionally reachable before normal login because possession of the locally retrieved high-entropy bootstrap code is the authorization for claiming a fresh appliance. No radio/network control or configuration-commit endpoint is opened by the current authentication slice.
+The one-time claim endpoint is intentionally reachable before normal login because possession of the locally retrieved high-entropy bootstrap code is the authorization for claiming a fresh appliance. No radio/network control or configuration-commit endpoint is opened yet.
 
-For the implementation order and security boundary, see [Setup and Security Phase](../developers/setup-security-phase.md).
+For the implementation order and security boundary, see [Setup and Security Phase](../developers/setup-security-phase.md) and [Authorization and Browser Mutation Protection](../developers/authorization-model.md).
