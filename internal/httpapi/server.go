@@ -13,14 +13,16 @@ import (
 
 	"github.com/merberg-ai/ywd-dmr/internal/config"
 	"github.com/merberg-ai/ywd-dmr/internal/core"
+	"github.com/merberg-ai/ywd-dmr/internal/dmrnet"
 	"github.com/merberg-ai/ywd-dmr/internal/security"
 )
 
 type Server struct {
-	state       *core.State
-	security    *security.Manager
-	configStore *config.FileStore
-	mux         *http.ServeMux
+	state         *core.State
+	security      *security.Manager
+	configStore   *config.FileStore
+	networkTester dmrnet.Tester
+	mux           *http.ServeMux
 }
 
 func New(state *core.State, webRoot, docsRoot string) http.Handler {
@@ -35,8 +37,24 @@ func NewWithSecurityAndConfig(state *core.State, securityManager *security.Manag
 	return newServer(state, securityManager, configStore, webRoot, docsRoot)
 }
 
+// NewWithServices is the daemon constructor once protected setup operations need
+// both durable configuration and a real DMR-network connectivity tester.
+func NewWithServices(state *core.State, securityManager *security.Manager, configStore *config.FileStore, networkTester dmrnet.Tester, webRoot, docsRoot string) http.Handler {
+	return newServerWithTester(state, securityManager, configStore, networkTester, webRoot, docsRoot)
+}
+
 func newServer(state *core.State, securityManager *security.Manager, configStore *config.FileStore, webRoot, docsRoot string) http.Handler {
-	s := &Server{state: state, security: securityManager, configStore: configStore, mux: http.NewServeMux()}
+	return newServerWithTester(state, securityManager, configStore, nil, webRoot, docsRoot)
+}
+
+func newServerWithTester(state *core.State, securityManager *security.Manager, configStore *config.FileStore, networkTester dmrnet.Tester, webRoot, docsRoot string) http.Handler {
+	s := &Server{
+		state:         state,
+		security:      securityManager,
+		configStore:   configStore,
+		networkTester: networkTester,
+		mux:           http.NewServeMux(),
+	}
 	s.routes(webRoot, docsRoot)
 	return securityHeaders(browserMutationProtection(s.mux))
 }
