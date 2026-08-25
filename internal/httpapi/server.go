@@ -17,21 +17,26 @@ import (
 )
 
 type Server struct {
-	state    *core.State
-	security *security.Manager
-	mux      *http.ServeMux
+	state       *core.State
+	security    *security.Manager
+	configStore *config.FileStore
+	mux         *http.ServeMux
 }
 
 func New(state *core.State, webRoot, docsRoot string) http.Handler {
-	return newServer(state, nil, webRoot, docsRoot)
+	return newServer(state, nil, nil, webRoot, docsRoot)
 }
 
 func NewWithSecurity(state *core.State, securityManager *security.Manager, webRoot, docsRoot string) http.Handler {
-	return newServer(state, securityManager, webRoot, docsRoot)
+	return newServer(state, securityManager, nil, webRoot, docsRoot)
 }
 
-func newServer(state *core.State, securityManager *security.Manager, webRoot, docsRoot string) http.Handler {
-	s := &Server{state: state, security: securityManager, mux: http.NewServeMux()}
+func NewWithSecurityAndConfig(state *core.State, securityManager *security.Manager, configStore *config.FileStore, webRoot, docsRoot string) http.Handler {
+	return newServer(state, securityManager, configStore, webRoot, docsRoot)
+}
+
+func newServer(state *core.State, securityManager *security.Manager, configStore *config.FileStore, webRoot, docsRoot string) http.Handler {
+	s := &Server{state: state, security: securityManager, configStore: configStore, mux: http.NewServeMux()}
 	s.routes(webRoot, docsRoot)
 	return securityHeaders(browserMutationProtection(s.mux))
 }
@@ -129,6 +134,7 @@ func (s *Server) routes(webRoot, docsRoot string) {
 	}))
 
 	s.registerAuthRoutes()
+	s.registerConfigurationRoutes()
 
 	if dirExists(docsRoot) {
 		s.mux.Handle("/docs/", http.StripPrefix("/docs/", http.FileServer(http.Dir(docsRoot))))
