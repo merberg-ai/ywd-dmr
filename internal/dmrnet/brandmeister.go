@@ -18,7 +18,7 @@ import (
 const (
 	brandMeisterConfigPacketLength = 302
 	defaultStageTimeout            = 1500 * time.Millisecond
-	defaultStageAttempts           = 2
+	defaultStageAttempts           = 1
 )
 
 var (
@@ -169,9 +169,9 @@ func (t *BrandMeisterTester) exchange(ctx context.Context, conn net.Conn, packet
 				}
 				return append([]byte(nil), response...), TestReasonOK, ""
 			default:
-				// Ignore unrelated/late packets and continue until this stage's
-				// bounded deadline. The connected UDP socket already limits traffic
-				// to the selected master endpoint.
+				// Ignore unrelated packets and continue until this stage's bounded
+				// deadline. The connected UDP socket already limits traffic to the
+				// selected master endpoint.
 			}
 		}
 	}
