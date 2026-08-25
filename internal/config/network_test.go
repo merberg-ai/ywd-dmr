@@ -7,10 +7,11 @@ import (
 
 func TestValidateNetworkCandidateNormalizesBrandMeister(t *testing.T) {
 	candidate, result := ValidateNetworkCandidate(NetworkInput{
-		Backend:       " BrandMeister ",
-		MasterAddress: " BM3103.EXAMPLE.NET. ",
-		MasterPort:    0,
-		Password:      "radio-secret",
+		Backend:                 " BrandMeister ",
+		MasterAddress:           " BM3103.EXAMPLE.NET. ",
+		MasterPort:              0,
+		RegistrationFrequencyHz: 446_525_000,
+		Password:                "radio-secret",
 	})
 
 	if !result.Valid {
@@ -25,6 +26,9 @@ func TestValidateNetworkCandidateNormalizesBrandMeister(t *testing.T) {
 	if candidate.MasterPort != BrandMeisterDefaultPort {
 		t.Fatalf("unexpected master port %d", candidate.MasterPort)
 	}
+	if candidate.RegistrationFrequencyHz != 446_525_000 {
+		t.Fatalf("unexpected registration frequency %d", candidate.RegistrationFrequencyHz)
+	}
 	if candidate.Password != "radio-secret" {
 		t.Fatal("password must be preserved internally for the connection test")
 	}
@@ -36,10 +40,11 @@ func TestValidateNetworkCandidateNormalizesBrandMeister(t *testing.T) {
 func TestNetworkValidationDoesNotEchoPassword(t *testing.T) {
 	secret := "no-echo-secret"
 	_, result := ValidateNetworkCandidate(NetworkInput{
-		Backend:       "brandmeister",
-		MasterAddress: "127.0.0.1",
-		MasterPort:    62031,
-		Password:      secret,
+		Backend:                 "brandmeister",
+		MasterAddress:           "127.0.0.1",
+		MasterPort:              62031,
+		RegistrationFrequencyHz: 446_525_000,
+		Password:                secret,
 	})
 
 	if !result.Valid {
@@ -53,26 +58,28 @@ func TestNetworkValidationDoesNotEchoPassword(t *testing.T) {
 
 func TestValidateNetworkCandidateRejectsInvalidFields(t *testing.T) {
 	_, result := ValidateNetworkCandidate(NetworkInput{
-		Backend:       "other-network",
-		MasterAddress: "https://master.example:62031/path",
-		MasterPort:    70000,
-		Password:      "bad\npassword",
+		Backend:                 "other-network",
+		MasterAddress:           "https://master.example:62031/path",
+		MasterPort:              70000,
+		RegistrationFrequencyHz: 0,
+		Password:                "bad\npassword",
 	})
 
 	if result.Valid {
 		t.Fatal("expected invalid result")
 	}
-	if len(result.Errors) != 4 {
-		t.Fatalf("expected four field errors, got %d: %+v", len(result.Errors), result.Errors)
+	if len(result.Errors) != 5 {
+		t.Fatalf("expected five field errors, got %d: %+v", len(result.Errors), result.Errors)
 	}
 }
 
 func TestValidateNetworkCandidateAcceptsIPv6(t *testing.T) {
 	candidate, result := ValidateNetworkCandidate(NetworkInput{
-		Backend:       "brandmeister",
-		MasterAddress: "2001:db8::1",
-		MasterPort:    62031,
-		Password:      "secret",
+		Backend:                 "brandmeister",
+		MasterAddress:           "2001:db8::1",
+		MasterPort:              62031,
+		RegistrationFrequencyHz: 446_525_000,
+		Password:                "secret",
 	})
 	if !result.Valid {
 		t.Fatalf("expected IPv6 to be valid: %+v", result.Errors)
@@ -85,10 +92,11 @@ func TestValidateNetworkCandidateAcceptsIPv6(t *testing.T) {
 func TestValidateNetworkCandidateAcceptsTwentyCharacterHotspotPassword(t *testing.T) {
 	password := strings.Repeat("a", BrandMeisterMaxHotspotPassword)
 	_, result := ValidateNetworkCandidate(NetworkInput{
-		Backend:       "brandmeister",
-		MasterAddress: "bm.example.net",
-		MasterPort:    62031,
-		Password:      password,
+		Backend:                 "brandmeister",
+		MasterAddress:           "bm.example.net",
+		MasterPort:              62031,
+		RegistrationFrequencyHz: 446_525_000,
+		Password:                password,
 	})
 	if !result.Valid {
 		t.Fatalf("expected %d-character password to be valid: %+v", BrandMeisterMaxHotspotPassword, result.Errors)
@@ -98,10 +106,11 @@ func TestValidateNetworkCandidateAcceptsTwentyCharacterHotspotPassword(t *testin
 func TestValidateNetworkCandidateRejectsLongHotspotPassword(t *testing.T) {
 	password := strings.Repeat("a", BrandMeisterMaxHotspotPassword+1)
 	_, result := ValidateNetworkCandidate(NetworkInput{
-		Backend:       "brandmeister",
-		MasterAddress: "bm.example.net",
-		MasterPort:    62031,
-		Password:      password,
+		Backend:                 "brandmeister",
+		MasterAddress:           "bm.example.net",
+		MasterPort:              62031,
+		RegistrationFrequencyHz: 446_525_000,
+		Password:                password,
 	})
 	if result.Valid {
 		t.Fatal("expected over-length BrandMeister password to be rejected")
@@ -112,4 +121,22 @@ func TestValidateNetworkCandidateRejectsLongHotspotPassword(t *testing.T) {
 		}
 	}
 	t.Fatalf("expected password field error: %+v", result.Errors)
+}
+
+func TestValidateNetworkCandidateRejectsMissingRegistrationFrequency(t *testing.T) {
+	_, result := ValidateNetworkCandidate(NetworkInput{
+		Backend:       "brandmeister",
+		MasterAddress: "bm.example.net",
+		MasterPort:    62031,
+		Password:      "secret",
+	})
+	if result.Valid {
+		t.Fatal("expected missing registration frequency to be rejected")
+	}
+	for _, fieldErr := range result.Errors {
+		if fieldErr.Field == "registration_frequency_hz" && fieldErr.Code == "invalid_registration_frequency" {
+			return
+		}
+	}
+	t.Fatalf("expected registration frequency field error: %+v", result.Errors)
 }
