@@ -1,6 +1,6 @@
 # First-run Setup
 
-The production browser wizard is not complete yet, but the daemon-side setup flow now includes station-identity validation and durable commit, one-time installation claim, normal administrator login/logout, role authorization, browser same-origin mutation protection, protected BrandMeister candidate validation, and the first real non-persisting BrandMeister connectivity test.
+The production browser wizard is not complete yet, but the daemon-side setup flow now includes station-identity validation and durable commit, one-time installation claim, normal administrator login/logout, role authorization, browser same-origin mutation protection, protected BrandMeister candidate validation, and a real non-persisting BrandMeister connectivity test.
 
 The finished wizard will use large, plain-language steps:
 
@@ -8,14 +8,14 @@ The finished wizard will use large, plain-language steps:
 2. Create the administrator account. There is no default `admin/admin` password.
 3. Enter and save callsign, DMR ID, and ESSID.
 4. Select BrandMeister and a master server.
-5. Enter the BrandMeister Hotspot Security password.
-6. Test the real master connection and credentials before saving them as active.
-7. Choose and test microphone and speaker devices.
-8. Detect or configure a vocoder backend, or continue safely in no-vocoder mode.
-9. Run a complete station health check.
-10. Finish setup and open the dashboard.
+5. Enter a nominal Homebrew registration frequency.
+6. Enter the BrandMeister Hotspot Security password.
+7. Test the real master connection and credentials before saving them as active.
+8. Choose and test microphone and speaker devices.
+9. Detect or configure a vocoder backend, or continue safely in no-vocoder mode.
+10. Run a complete station health check and open the dashboard.
 
-A failed network test should explain whether the problem looks like the DMR identity/login, hotspot password, master configuration, or a timeout/network problem rather than showing only a generic error.
+A failed network test should explain whether the problem looks like the DMR identity/login, hotspot password, Homebrew registration/configuration, or a timeout/network problem rather than showing only a generic error.
 
 ## What works now on `dev`
 
@@ -84,45 +84,46 @@ POST /api/v1/setup/network/validate
 
 It requires an Admin session because the request contains the BrandMeister Hotspot Security password.
 
-Example request:
+Current request:
 
 ```json
 {
   "backend": "brandmeister",
   "master_address": "master.example.net",
   "master_port": 62031,
+  "registration_frequency_hz": 446525000,
   "password": "your BrandMeister hotspot password"
 }
 ```
 
-Current BrandMeister guidance limits the Hotspot Security password to 20 characters. YWD-DMR therefore rejects an empty password, a password longer than 20 characters, or one containing control characters before any network test begins. BrandMeister also recommends avoiding special characters; YWD-DMR does not currently invent a stricter character whitelist beyond the documented length and control-character rules.
+`registration_frequency_hz` is the nominal frequency YWD-DMR reports in the Homebrew registration block. For the current simplex/software registration it is placed in both the RX and TX metadata fields. It does **not** mean YWD-DMR has an RF transmitter or will key a radio.
 
-The response never returns the password. It only returns normalized non-secret fields and whether a password was supplied. Leaving `master_port` at `0` uses the Homebrew default `62031`.
+The current API accepts registration frequencies from `100000000` through `999999999` Hz. It deliberately does not try to enforce every country's amateur band plan; the operator is responsible for entering an appropriate nominal amateur-radio frequency.
 
-This local validator is installed Pi 5 validated. It does **not** contact BrandMeister and does not save anything.
+Current BrandMeister guidance limits the Hotspot Security password to 20 characters. YWD-DMR rejects an empty password, a password longer than 20 characters, or one containing control characters before any network test begins.
+
+The response never returns the password. It returns the normalized non-secret fields, including the registration frequency, plus `password_set`. Leaving `master_port` at `0` uses the Homebrew default `62031`.
 
 ### Test the real BrandMeister master
-
-A real, still non-persisting test endpoint is now implemented on `dev`:
 
 ```text
 POST /api/v1/setup/network/test
 ```
 
-It uses the same network request shape as `/network/validate`, but it also requires an already saved station identity. YWD-DMR reads callsign/DMR ID/ESSID from known-good state so the network request cannot silently substitute another station identity.
+This endpoint is still non-persisting. It uses the same request shape as `/network/validate` and also requires an already saved station identity. YWD-DMR reads callsign/DMR ID/ESSID from known-good state so the network request cannot silently substitute another station identity.
 
-The temporary test performs only the Homebrew setup handshake:
+The temporary test performs only:
 
 ```text
 RPTL -> login acknowledgement and salt
 RPTK -> password authentication acknowledgement
-RPTC -> software endpoint configuration acknowledgement
+RPTC -> endpoint registration/configuration acknowledgement
 RPTCL -> close temporary session
 ```
 
 No DMR voice/data is transmitted.
 
-The test is bounded and returns a plain-language result with one of these reason codes:
+The test returns one of these reason codes:
 
 ```text
 ok
@@ -137,30 +138,34 @@ unavailable
 Examples:
 
 - `login` — BrandMeister rejected the DMR/hotspot ID;
-- `auth` — the Hotspot Security password was rejected;
-- `config` — the software endpoint configuration was rejected;
+- `auth` — the Hotspot Security response was rejected;
+- `config` — authentication succeeded but the Homebrew registration/configuration block was rejected;
 - `timeout` — the master did not answer in time;
 - `network` — DNS/socket/network path problem.
 
 The password, challenge salt, and password hash are never returned.
 
-### Software endpoint, not a fake radio
+### What the real Pi tests have proven
 
-YWD-DMR is being built as a software DMR endpoint without an RF transmitter. For the temporary BrandMeister setup test it therefore sends neutral zero RX/TX frequency and power fields rather than pretending that it has an RF frequency.
+The live-test infrastructure is installed-machine validated. It correctly fails closed before station identity exists, rejects cross-origin browser tests, classifies an unreachable `.invalid` master as `network`, and leaves known-good configuration unchanged on every failed live test.
 
-If BrandMeister rejects that representation, the test should report `config`. We will adjust the software-endpoint representation based on real protocol behavior, not invent fake radio details to force a successful result.
+A real BrandMeister test then proved the device-ID login and Hotspot Security authentication stages. With the verified Hotspot Security credential, BrandMeister returned `reason: config`, which means `RPTL` and `RPTK` both succeeded and the remaining rejection was the original zero-frequency/zero-power `RPTC` metadata.
+
+The current `dev` build therefore replaces those zero values with explicit operator-supplied registration-frequency metadata and informational power `01`. This change still does not add any RF transmit capability.
+
+See [BrandMeister Live Test Notes](../developers/brandmeister-live-test-notes.md).
 
 ### What is intentionally not available yet
 
 There is still no network **commit** endpoint.
 
-Even a successful BrandMeister test does not save the master or password. The required transaction remains:
+Even a successful BrandMeister test does not save the master, registration frequency, or password. The required transaction remains:
 
 ```text
 candidate -> local validation -> real master login/auth/config test -> durable commit
 ```
 
-The known-good schema is still identity-only. Network persistence and its migration/rollback rules come only after the live test is proven on the Pi.
+The known-good schema is still identity-only. Network persistence and its migration/rollback rules come only after the complete live test is proven on the Pi.
 
 ## Current safety note
 
@@ -168,4 +173,4 @@ The current LAN test build is development software. Keep it on a trusted local n
 
 Production HTTPS/WSS, trusted reverse-proxy behavior, Secure-cookie deployment, long-lived BrandMeister networking, radio controls, and PTT are not finished.
 
-For more detail, see [Setup and Security Phase](../developers/setup-security-phase.md), [BrandMeister Candidate Validation Notes](../developers/network-validation-notes.md), and [DMR Network Backend and BrandMeister Setup Contract](../developers/network-backend-contract.md).
+For more detail, see [Setup and Security Phase](../developers/setup-security-phase.md), [BrandMeister Candidate Validation Notes](../developers/network-validation-notes.md), [BrandMeister Live Test Notes](../developers/brandmeister-live-test-notes.md), and [DMR Network Backend and BrandMeister Setup Contract](../developers/network-backend-contract.md).
