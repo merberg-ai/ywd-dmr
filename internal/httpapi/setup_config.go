@@ -9,9 +9,9 @@ import (
 )
 
 // registerConfigurationRoutes exposes mutations only through the daemon-owned
-// known-good configuration transaction path. The public validation endpoint
-// remains separate so clients can validate form input before authenticating or
-// committing anything.
+// known-good configuration transaction path. The public identity-validation
+// endpoint remains separate; protected network setup routes are registered from
+// the same setup/configuration surface.
 func (s *Server) registerConfigurationRoutes() {
 	s.mux.HandleFunc("/api/v1/setup/identity/commit", s.postOnly(s.requireRole(security.RoleAdmin, func(w http.ResponseWriter, r *http.Request) {
 		if s.configStore == nil {
@@ -49,4 +49,6 @@ func (s *Server) registerConfigurationRoutes() {
 			"identity":  committed.Identity,
 		})
 	})))
+
+	s.registerNetworkRoutes()
 }
