@@ -53,7 +53,7 @@ func main() {
 		log.Printf("WARNING: known-good configuration could not be loaded: %v", err)
 	}
 
-	handler := httpapi.NewWithSecurity(state, securityManager, webRoot, docsRoot)
+	handler := httpapi.NewWithSecurityAndConfig(state, securityManager, store, webRoot, docsRoot)
 
 	srv := &http.Server{
 		Addr:              listen,
