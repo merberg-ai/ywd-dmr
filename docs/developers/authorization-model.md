@@ -18,7 +18,7 @@ Role meaning:
 
 Unknown role strings fail closed. There is no implicit superuser role above Admin.
 
-The first claimed account remains an Admin. Persistent multi-user/device credential management is not introduced by this slice; the role model and middleware are being established before additional principal types exist.
+The first claimed account remains an Admin. Persistent multi-user/device credential management is not introduced by this slice; the role model and middleware are established before additional principal types exist.
 
 ## Server-side middleware
 
@@ -31,7 +31,11 @@ Protected handlers use reusable authorization middleware that:
 5. returns HTTP `403` when an authenticated principal lacks the required role;
 6. places the authenticated principal in request context for the protected handler.
 
-The middleware is intentionally implemented before configuration mutation endpoints are opened. The protected known-good configuration commit API will be the first normal setup endpoint to depend on Admin authorization.
+The first normal setup mutation to depend on this middleware is the Admin-only station-identity commit endpoint:
+
+```text
+POST /api/v1/setup/identity/commit
+```
 
 ## Browser mutation protection
 
@@ -58,7 +62,15 @@ The server does **not** trust `X-Forwarded-For`, `X-Forwarded-Proto`, or other p
 
 ## Current boundary
 
-This slice adds the authorization machinery and browser mutation protection, but it does not yet expose configuration commits, BrandMeister controls, radio controls, or PTT.
+The authorization/origin foundation is now real-machine validated. The first Admin-protected configuration commit endpoint is implemented on `dev`, but BrandMeister controls, radio controls, and PTT remain absent.
+
+Station identity uses the existing known-good configuration transaction rather than a separate setup file. Identity has no external service to probe, so its path is:
+
+```text
+candidate -> normalize/validate -> durable commit
+```
+
+Network settings such as BrandMeister will later add a real connectivity-test step before commit.
 
 The development LAN interface remains trusted-LAN-only. Do not router-forward it or expose it directly to the public internet.
 
@@ -76,4 +88,17 @@ Automated tests cover:
 - read-only GET behavior;
 - end-to-end server middleware wiring before an existing mutation endpoint.
 
-Real installed-appliance validation is still required before this slice is marked complete.
+Installed Raspberry Pi 5 validation also passed. The runtime sequence was exactly:
+
+```text
+direct API mutation        200
+same-origin browser        200
+cross-origin Origin        403
+cross-site fetch metadata  403
+same-site/different-origin 403
+cross-origin read-only GET 200
+```
+
+The unclaimed bootstrap code remained intact and final health passed. See [Authorization and Browser-Mutation Validation Notes](authorization-validation-notes.md) for the exact real-machine results.
+
+The next validation target is the Admin-only station-identity commit path, including durable revision changes, invalid-candidate protection, restart persistence, and previous-snapshot rollback behavior.
