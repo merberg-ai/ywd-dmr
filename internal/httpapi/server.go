@@ -128,6 +128,8 @@ func (s *Server) routes(webRoot, docsRoot string) {
 		})
 	}))
 
+	s.registerAuthRoutes()
+
 	if dirExists(docsRoot) {
 		s.mux.Handle("/docs/", http.StripPrefix("/docs/", http.FileServer(http.Dir(docsRoot))))
 	}
