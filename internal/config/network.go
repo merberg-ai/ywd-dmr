@@ -7,13 +7,14 @@ import (
 )
 
 const (
-	NetworkBackendBrandMeister = "brandmeister"
-	BrandMeisterDefaultPort    = 62031
+	NetworkBackendBrandMeister       = "brandmeister"
+	BrandMeisterDefaultPort          = 62031
+	BrandMeisterMaxHotspotPassword   = 20
 )
 
 // NetworkInput is the untrusted network configuration submitted by a setup
-// client. Password is accepted here because the future connectivity test needs
-// it, but validation responses never echo the secret back to the client.
+// client. Password is accepted here because the connectivity test needs it, but
+// validation/test responses never echo the secret back to the client.
 type NetworkInput struct {
 	Backend       string `json:"backend"`
 	MasterAddress string `json:"master_address"`
@@ -82,11 +83,11 @@ func ValidateNetworkCandidate(input NetworkInput) (NetworkCandidate, NetworkVali
 			Message: "Master port must be a number from 1 through 65535. Leave it at 0 to use the BrandMeister default 62031.",
 		})
 	}
-	if strings.TrimSpace(candidate.Password) == "" || len(candidate.Password) > 256 || containsControl(candidate.Password) {
+	if strings.TrimSpace(candidate.Password) == "" || len(candidate.Password) > BrandMeisterMaxHotspotPassword || containsControl(candidate.Password) {
 		errs = append(errs, FieldError{
 			Field:   "password",
 			Code:    "invalid_password",
-			Message: "Enter the BrandMeister hotspot password. It may be up to 256 characters and must not contain control characters.",
+			Message: "Enter the BrandMeister Hotspot Security password. It may be up to 20 characters and must not contain control characters.",
 		})
 	}
 
