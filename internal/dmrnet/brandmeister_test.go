@@ -14,6 +14,8 @@ import (
 	"github.com/merberg-ai/ywd-dmr/internal/config"
 )
 
+const testRegistrationFrequencyHz = 446_525_000
+
 func TestBrandMeisterDeviceID(t *testing.T) {
 	withoutESSID, err := brandMeisterDeviceID(config.RadioIdentity{DMRID: 1234567, ESSID: 0})
 	if err != nil || withoutESSID != 1234567 {
@@ -86,8 +88,12 @@ func TestBrandMeisterTesterCompletesHandshakeAndCloses(t *testing.T) {
 			serverErr <- fmt.Errorf("unexpected callsign field %q", got)
 			return
 		}
-		if got := string(buffer[16:34]); got != "000000000000000000" {
-			serverErr <- fmt.Errorf("unexpected software frequency fields %q", got)
+		if got := string(buffer[16:34]); got != "446525000446525000" {
+			serverErr <- fmt.Errorf("unexpected registration frequency fields %q", got)
+			return
+		}
+		if got := string(buffer[34:36]); got != "01" {
+			serverErr <- fmt.Errorf("unexpected compatibility power field %q", got)
 			return
 		}
 		if buffer[97] != '4' {
@@ -124,10 +130,11 @@ func TestBrandMeisterTesterCompletesHandshakeAndCloses(t *testing.T) {
 		DMRID:    1234567,
 		ESSID:    1,
 	}, config.NetworkCandidate{
-		Backend:       config.NetworkBackendBrandMeister,
-		MasterAddress: "127.0.0.1",
-		MasterPort:    addr.Port,
-		Password:      password,
+		Backend:                 config.NetworkBackendBrandMeister,
+		MasterAddress:           "127.0.0.1",
+		MasterPort:              addr.Port,
+		RegistrationFrequencyHz: testRegistrationFrequencyHz,
+		Password:                password,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -167,10 +174,11 @@ func TestBrandMeisterTesterMapsAuthNAK(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	result, err := tester.Test(ctx, config.RadioIdentity{Callsign: "N0CALL", DMRID: 1234567}, config.NetworkCandidate{
-		Backend:       config.NetworkBackendBrandMeister,
-		MasterAddress: "127.0.0.1",
-		MasterPort:    addr.Port,
-		Password:      "wrong",
+		Backend:                 config.NetworkBackendBrandMeister,
+		MasterAddress:           "127.0.0.1",
+		MasterPort:              addr.Port,
+		RegistrationFrequencyHz: testRegistrationFrequencyHz,
+		Password:                "wrong",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -195,10 +203,11 @@ func TestBrandMeisterTesterTimesOutWithoutReply(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	defer cancel()
 	result, err := tester.Test(ctx, config.RadioIdentity{Callsign: "N0CALL", DMRID: 1234567}, config.NetworkCandidate{
-		Backend:       config.NetworkBackendBrandMeister,
-		MasterAddress: "127.0.0.1",
-		MasterPort:    addr.Port,
-		Password:      "secret",
+		Backend:                 config.NetworkBackendBrandMeister,
+		MasterAddress:           "127.0.0.1",
+		MasterPort:              addr.Port,
+		RegistrationFrequencyHz: testRegistrationFrequencyHz,
+		Password:                "secret",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -214,10 +223,11 @@ func TestBrandMeisterTesterRejectsCallsignTooLongForHomebrew(t *testing.T) {
 		Callsign: "LONGCALL99",
 		DMRID:    1234567,
 	}, config.NetworkCandidate{
-		Backend:       config.NetworkBackendBrandMeister,
-		MasterAddress: "127.0.0.1",
-		MasterPort:    62031,
-		Password:      "secret",
+		Backend:                 config.NetworkBackendBrandMeister,
+		MasterAddress:           "127.0.0.1",
+		MasterPort:              62031,
+		RegistrationFrequencyHz: testRegistrationFrequencyHz,
+		Password:                "secret",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -227,8 +237,27 @@ func TestBrandMeisterTesterRejectsCallsignTooLongForHomebrew(t *testing.T) {
 	}
 }
 
+func TestBrandMeisterTesterRejectsMissingRegistrationFrequency(t *testing.T) {
+	tester := NewBrandMeisterTester()
+	result, err := tester.Test(context.Background(), config.RadioIdentity{
+		Callsign: "N0CALL",
+		DMRID:    1234567,
+	}, config.NetworkCandidate{
+		Backend:       config.NetworkBackendBrandMeister,
+		MasterAddress: "127.0.0.1",
+		MasterPort:    62031,
+		Password:      "secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.OK || result.Reason != TestReasonConfig {
+		t.Fatalf("expected registration-frequency config failure, got %+v", result)
+	}
+}
+
 func TestBrandMeisterConfigPacketLengthAndFields(t *testing.T) {
-	packet, err := buildBrandMeisterConfigPacket(config.RadioIdentity{Callsign: "N0CALL"}, 1234567)
+	packet, err := buildBrandMeisterConfigPacket(config.RadioIdentity{Callsign: "N0CALL"}, 1234567, testRegistrationFrequencyHz)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,5 +269,14 @@ func TestBrandMeisterConfigPacketLengthAndFields(t *testing.T) {
 	}
 	if got := strconv.Itoa(int(binary.BigEndian.Uint32(packet[4:8]))); got != "1234567" {
 		t.Fatalf("unexpected ID %s", got)
+	}
+	if got := string(packet[16:25]); got != "446525000" {
+		t.Fatalf("unexpected RX registration frequency %q", got)
+	}
+	if got := string(packet[25:34]); got != "446525000" {
+		t.Fatalf("unexpected TX registration frequency %q", got)
+	}
+	if got := string(packet[34:36]); got != "01" {
+		t.Fatalf("unexpected compatibility power %q", got)
 	}
 }
