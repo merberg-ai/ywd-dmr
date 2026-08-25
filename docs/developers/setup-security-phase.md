@@ -1,12 +1,10 @@
 # Setup and Security Phase
 
-This phase turns the tested YWD-DMR appliance into something a normal operator can safely configure from a browser before DMR networking and audio are enabled.
+This phase turns the tested YWD-DMR appliance into something a normal operator can safely configure from a browser before long-lived DMR networking and audio are enabled.
 
 ## Goal
 
-The phase is complete when a fresh installation can be claimed once, an administrator can enter and validate the station identity, settings can be tested before they replace known-good configuration, and the daemon can safely expose protected setup/control operations to the WebUI and future Android client.
-
-This work intentionally comes before the long-lived BrandMeister connection. Network credentials, DMR identity, audio choices, and vocoder settings all need one authoritative configuration/security model rather than separate ad-hoc files or browser-only state.
+The phase is complete when a fresh installation can be claimed once, an administrator can enter and validate station identity, settings can be tested before they replace known-good configuration, and protected setup/control operations are safe for the WebUI and future native clients.
 
 ## Proven setup/security foundation
 
@@ -23,29 +21,21 @@ one-time claim
   -> previous-snapshot rotation
   -> restart persistence and explicit recovery
   -> protected BrandMeister candidate validation
+  -> protected non-persisting BrandMeister live test
 ```
 
-The identity exercise proved revision `1 -> 2`, `0600 ywd-dmr:ywd-dmr` current/previous snapshots, invalid-candidate preservation, restart persistence, and real recovery from the API-created previous snapshot after deliberately corrupting current.
+The identity exercise proved revision `1 -> 2`, snapshot ownership/mode, invalid-candidate preservation, restart persistence, and recovery from the API-created previous snapshot.
 
-The protected network-validation exercise then proved that a BrandMeister candidate can be normalized and password-redacted without changing the identity-only known-good file, revision, rollback snapshot, or setup stage.
+The BrandMeister candidate-validation and live-test exercises proved that network credentials can be checked without changing the identity-only known-good revision or creating a rollback snapshot.
 
-See [Protected Station-Identity Commit Validation Notes](identity-commit-validation-notes.md) and [BrandMeister Candidate Validation Notes](network-validation-notes.md).
+## 1. Radio identity
 
-## 1. Radio identity model and validation
-
-First-run setup collects:
-
-- **Callsign** — the operator/station's base amateur-radio callsign.
-- **DMR ID** — the base numeric DMR ID, separate from any hotspot suffix.
-- **ESSID** — a number from 0 through 99 used by networks/backends that need a distinct hotspot/device identity.
-
-The public, non-mutating validation API is:
+First-run setup collects callsign, base DMR ID, and ESSID. Server-side validation and durable identity commit are implemented and Pi 5 validated through:
 
 ```text
 POST /api/v1/setup/identity/validate
+POST /api/v1/setup/identity/commit
 ```
-
-The daemon owns normalization and validation. Clients may perform friendly local checks, but server validation is authoritative.
 
 ## 2. Known-good configuration store
 
@@ -56,151 +46,110 @@ The daemon keeps:
 /var/lib/ywd-dmr/known-good.previous.json
 ```
 
-A candidate is validated before durable state changes. Later commits rotate the old current snapshot to the previous rollback snapshot before atomically replacing current. If current is unreadable or invalid, startup can explicitly recover a valid previous snapshot.
+The current schema remains identity-only. Network settings and the BrandMeister password are still not persisted.
 
-The real protected identity API has proven this same rotation/recovery path on installed storage rather than only through unit fixtures.
-
-See [Known-good Configuration Store](configuration-store.md).
-
-## 3. Daemon-owned setup status
+## 3. Setup status
 
 ```text
 GET /api/v1/setup/status
 ```
 
-The public setup status reports coarse configuration health and setup progress without returning stored identity or secrets.
+Configuration health is reported as `missing`, `loaded`, `recovered`, or `error`. Recovery from the previous snapshot is explicit in both API state and the journal.
 
-Configuration state may be:
+## 4. Claim, login, roles, browser safety
 
-```text
-missing
-loaded
-recovered
-error
-```
-
-A recovered previous snapshot is never silently treated as normal; setup status and the service journal both say recovery occurred.
-
-## 4. One-time installation claim
-
-A fresh appliance creates a high-entropy claim code in the restricted state directory and exposes it locally through:
-
-```bash
-sudo ywd-dmr claim-code
-```
-
-The deliberate unauthenticated bootstrap mutation is:
+Implemented and Pi 5 validated:
 
 ```text
 POST /api/v1/setup/claim
-```
-
-Successful claim creates the first Admin password verifier, burns the one-time bootstrap path, and creates an opaque memory-only browser session. Claim is fully installed-appliance validated. The first Pi 5 PBKDF2/claim timing measurement was `0.516708s`.
-
-See [One-time Claim Validation Notes](claim-validation-notes.md).
-
-## 5. Administrator login
-
-Implemented and real-machine validated:
-
-```text
 POST /api/v1/auth/login
 POST /api/v1/auth/logout
 GET  /api/v1/auth/session
 ```
 
-Wrong username and wrong password use the same generic failure and execute the password KDF. Login sessions and throttling are memory-only; daemon restart clears them while durable Admin state survives.
-
-Pi 5 measurements included wrong username `0.520663s`, wrong password `0.520534s`, valid login `0.519940s`, and post-restart valid login `0.517669s`.
-
-See [Administrator Authentication Validation Notes](auth-validation-notes.md).
-
-## 6. Roles and browser mutation protection
-
-Server-side hierarchy:
+Role hierarchy:
 
 ```text
 Observer < Operator < Admin
 ```
 
-Unknown roles fail closed. Protected handlers require a live session and minimum role.
+Browser mutations require same-origin metadata when the browser supplies Origin/Sec-Fetch-Site headers. Direct non-browser API clients remain supported.
 
-State-changing browser methods (`POST`, `PUT`, `PATCH`, `DELETE`) pass through same-origin protection. `Origin`, when present, must match the request origin; `Sec-Fetch-Site`, when present, must be `same-origin` or `none`. Direct non-browser API clients remain usable.
-
-This layer is installed-machine validated. See [Authorization and Browser Mutation Protection](authorization-model.md) and [Authorization Validation Notes](authorization-validation-notes.md).
-
-## 7. Protected station-identity commit
-
-Implemented and fully installed-machine validated:
+## 5. Protected identity commit
 
 ```text
 POST /api/v1/setup/identity/commit
 ```
 
-It is Admin-only and same-origin protected for browsers.
-
-Identity has no external service to test, so its transaction is:
+Identity has no external service dependency, so its transaction is:
 
 ```text
 candidate -> normalize/validate -> durable commit
 ```
 
-Runtime setup state advances only after durable commit succeeds. The Pi 5 validation proved revision increment, previous-snapshot rotation, restart persistence, invalid-candidate preservation, and recovery from an API-created previous snapshot.
+The installed Pi exercise proved revision rotation, restart persistence, invalid-candidate preservation, and real previous-snapshot recovery.
 
-## 8. BrandMeister/network candidate validation
+## 6. BrandMeister network transaction
 
-Network configuration has an external dependency and therefore uses a stricter transaction:
+Network configuration has an external dependency and therefore uses:
 
 ```text
 candidate
   -> local validation
-  -> real connectivity/authentication test
+  -> real connectivity/authentication/configuration test
   -> durable commit
 ```
 
 Local validation alone is never called a successful network test.
 
-The candidate contains:
+Current candidate:
 
 ```json
 {
   "backend": "brandmeister",
   "master_address": "master.example.net",
   "master_port": 62031,
+  "registration_frequency_hz": 446525000,
   "password": "your hotspot password"
 }
 ```
 
-Callsign/DMR ID/ESSID are not duplicated here. The backend receives the already known-good station identity.
+Callsign/DMR ID/ESSID are not duplicated; the backend receives the already known-good station identity.
 
-Protected local validation is:
+`registration_frequency_hz` is explicit Homebrew/BrandMeister registration metadata. For the current simplex/software endpoint the same value is reported as RX and TX. It does not add an RF transmit path.
+
+## 7. Protected local network validation
 
 ```text
 POST /api/v1/setup/network/validate
 ```
 
-This endpoint requires Admin authentication and browser same-origin protection. It never echoes the password; the normalized result only reports `password_set: true/false`.
+Admin-only and browser same-origin protected. The response never echoes the password; it returns normalized non-secret fields plus `password_set`.
 
-The installed Pi 5 validation passed normalization, all four invalid-field errors, unknown JSON rejection, POST-only method enforcement, unauthenticated/cross-origin rejection, password redaction, and byte-for-byte known-good preservation. Schema 1 remained identity-only.
+The initial installed Pi validation proved authorization/origin handling, normalization, strict JSON/method behavior, password redaction, and byte-for-byte known-good preservation.
 
-## 9. Real BrandMeister connectivity test — active slice
+The request now also validates `registration_frequency_hz` before a live test can run.
 
-The first real but non-persisting network probe is now implemented on `dev`:
+## 8. Real BrandMeister connectivity test
 
 ```text
 POST /api/v1/setup/network/test
 ```
 
-It requires:
+Admin-only, same-origin protected, and deliberately non-persisting. It requires an already committed station identity and locally valid candidate.
 
-1. a live Admin session;
-2. a locally valid BrandMeister candidate;
-3. an already committed/readable station identity;
-4. the real network tester service.
+The bounded wire probe performs:
 
-A missing identity returns HTTP `409`. Invalid fields return HTTP `400`. Cross-origin browser requests are rejected before the tester runs.
+```text
+RPTL -> RPTACK + salt
+RPTK -> RPTACK
+RPTC -> RPTACK
+RPTCL
+```
 
-The handler gives the test a 10-second overall deadline and returns structured, password-free results:
+It has no `DMRD` transmit path and sends no DMR voice/data during setup testing.
+
+Machine-readable results:
 
 ```text
 ok
@@ -212,83 +161,79 @@ network
 unavailable
 ```
 
-The wire probe is deliberately short-lived:
+## 9. Installed live BrandMeister results
+
+The live-test infrastructure itself is Pi 5 proven:
+
+- missing identity fails closed with HTTP `409`;
+- cross-origin request fails before UDP;
+- a reserved `.invalid` master produces `reason: network`;
+- failed live tests leave known-good revision 1 unchanged;
+- failed live tests create no rollback snapshot;
+- cleanup returns the test box to fresh unclaimed/missing state.
+
+The real master test used base DMR ID `3196104`, ESSID `02`, and derived Homebrew device ID `319610402`.
+
+The first credential attempt produced `reason: auth`. After the operator supplied the verified BrandMeister Hotspot Security password, the next attempt produced:
 
 ```text
-RPTL -> RPTACK + salt
-RPTK -> RPTACK
-RPTC -> RPTACK
-RPTCL
+reason: config
 ```
 
-`RPTK` uses SHA-256 of `salt || password` as established by the Homebrew/MMDVM protocol. `RPTC` is the fixed 302-byte configuration packet.
-
-The tester has no DMRD transmit path and therefore cannot send DMR voice/data during setup testing.
-
-### BrandMeister device ID
-
-The backend derives the device ID from the canonical identity:
+That proves the real master accepted:
 
 ```text
-ESSID 0     -> base DMR ID
-ESSID 1..99 -> (base DMR ID * 100) + ESSID
+RPTL device-ID login       PASS
+RPTACK challenge           PASS
+RPTK password response     PASS
+RPTACK authentication      PASS
+RPTC zero-frequency config REJECTED
 ```
 
-The generic identity remains unchanged.
+The RPTK construction was independently cross-checked against current G4KLX DMRGateway behavior and matches the established `SHA256(salt || password)` protocol.
 
-### Software-endpoint configuration
+## 10. RPTC registration-frequency correction
 
-YWD-DMR does not have an RF transmitter in this architecture, so the temporary RPTC probe does not invent RF values. It sends zero RX/TX frequencies and power, zero coordinates/height, and explicit YWD-DMR software/client labels. The slot/mode field is `4` for simplex/DMO-style software endpoint behavior.
+The rejected RPTC had deliberately reported zero RX frequency, zero TX frequency, and zero power because YWD-DMR has no RF transmitter.
 
-The Homebrew callsign field is only eight characters wide. If the stored generic callsign cannot fit, the tester returns `reason: config` instead of silently truncating it.
+BrandMeister hotspot guidance expects valid frequency metadata for Homebrew registration. YWD-DMR now keeps the no-RF architecture honest by asking the operator for an explicit nominal `registration_frequency_hz` instead of silently inventing one.
 
-Whether the real BrandMeister master accepts the zero-RF software endpoint is intentionally part of the next Pi/live test. We will change the protocol representation only based on actual master behavior, not by pretending that software has a radio frequency.
+The current test RPTC uses:
 
-### Automated test coverage
+- operator registration frequency in RX;
+- the same operator registration frequency in TX;
+- informational power `01`;
+- color code `01`;
+- slot/mode `4` for simplex/DMO;
+- zero coordinates/height until real location settings exist;
+- YWD-DMR software/client labels.
 
-Local UDP test masters prove:
+The informational power is protocol metadata, not an RF-power claim.
 
-- hotspot-ID derivation;
-- `RPTL` packet framing;
-- four-byte salt handling;
-- `RPTK` password-hash construction;
-- fixed 302-byte `RPTC` framing;
-- explicit `RPTCL` close;
-- auth `MSTNAK -> reason: auth`;
-- bounded timeout handling;
-- no password in RPTC/results;
-- callsign-width failure as `reason: config`.
+Automated tests cover the registration-frequency validation, RPTC RX/TX bytes, informational power value, password secrecy, protocol framing, auth rejection, timeout, and HTTP non-persistence rules.
 
-HTTP tests prove that committed identity is required, invalid/cross-origin candidates never invoke the tester, the tester receives known-good identity, responses do not echo the password, and successful testing does not advance the known-good revision.
+See [BrandMeister Live Test Notes](brandmeister-live-test-notes.md) and [DMR Network Backend and BrandMeister Setup Contract](network-backend-contract.md).
 
-See [DMR Network Backend and BrandMeister Setup Contract](network-backend-contract.md).
+## 11. Durable BrandMeister network commit
 
-## 10. Durable BrandMeister network commit
+The commit remains intentionally closed. The next sequence is:
 
-The network commit remains intentionally closed.
+1. source/build/install gate for the registration-frequency RPTC update;
+2. focused real BrandMeister retry;
+3. require complete `ok` before persistence work;
+4. design an explicit known-good schema/migration for network settings/secrets;
+5. add protected network commit through the same current/previous snapshot transaction;
+6. then build the long-lived BrandMeister connection/reconnect state machine.
 
-The next sequence after the live tester is proven is:
+## 12. Guided WebUI wizard
 
-1. validate the installed test endpoint using local/failure cases;
-2. perform one real BrandMeister handshake with operator credentials;
-3. prove success/failure leaves current known-good state unchanged;
-4. make an explicit known-good schema/migration change for network settings;
-5. allow durable network commit only after the candidate passes the real test;
-6. build the long-lived BrandMeister connection/reconnect state machine.
-
-The current known-good schema remains identity-only and no BrandMeister password is persisted yet.
-
-## 11. Guided WebUI wizard
-
-The WebUI will use the same setup APIs as future Android/CLI clients, with plain-language DMR explanations and useful troubleshooting for rejected ID, wrong Hotspot Security password, master timeout, and configuration rejection.
+The WebUI will use the same setup APIs as future Android/CLI clients, with plain-language explanations for DMR ID/ESSID, master server, registration frequency, Hotspot Security password, and structured failure reasons.
 
 ## Security boundary during development
 
 The current LAN test dashboard remains development-only. Do **not** router-forward or publicly expose it.
 
-The public identity-validation endpoint is non-mutating. `POST /api/v1/setup/claim` remains the one deliberate unauthenticated setup mutation requiring the local bootstrap code. Login/logout, role authorization, browser-origin filtering, protected identity commit, and protected network candidate validation are installed-machine validated.
-
-The live network test is Admin-only and does not persist the password. There is still no network commit, BrandMeister production session, radio control, or PTT endpoint. HTTPS/WSS trusted-proxy deployment, Secure-cookie deployment, and device credentials are separate work.
+There is still no durable network commit, long-lived BrandMeister session, radio control, or PTT endpoint. HTTPS/WSS trusted-proxy deployment, Secure-cookie deployment, and device credentials are separate work.
 
 ## Current implementation status
 
@@ -299,18 +244,20 @@ The live network test is Admin-only and does not persist the password. There is 
 - [x] Observer / Operator / Admin authorization.
 - [x] Browser same-origin mutation protection.
 - [x] Protected station-identity commit.
-- [x] Full Pi 5 identity commit / revision rotation / previous-snapshot recovery validation.
+- [x] Full Pi 5 identity revision/rotation/recovery validation.
 - [x] Backend-neutral network candidate model.
 - [x] BrandMeister local validation and default-port normalization.
-- [x] Admin-protected `POST /api/v1/setup/network/validate`.
-- [x] Password-redacted network validation response.
-- [x] Installed Pi validation of protected network candidate validation.
-- [x] Backend-neutral connectivity-test result/reason interface.
-- [x] Real bounded BrandMeister/Homebrew connectivity/authentication tester.
-- [x] Local UDP Homebrew protocol tests.
-- [x] Protected `POST /api/v1/setup/network/test` using the real tester.
-- [ ] Pi source/runtime validation of the live test endpoint.
-- [ ] Successful real BrandMeister handshake.
+- [x] Admin-protected network validation with password redaction.
+- [x] Installed Pi network-candidate validation.
+- [x] Real bounded Homebrew connectivity/authentication tester.
+- [x] Protected non-persisting network test API.
+- [x] Installed Pi live-test safety/non-persistence validation.
+- [x] Real BrandMeister device-ID login accepted.
+- [x] Real BrandMeister Hotspot Security authentication accepted.
+- [x] Zero-frequency RPTC rejection isolated.
+- [x] Operator registration-frequency metadata added to RPTC candidate/test path.
+- [ ] Installed Pi validation of the RPTC registration-frequency update.
+- [ ] Complete real BrandMeister `ok` handshake.
 - [ ] Known-good schema migration for network configuration.
 - [ ] Tested protected network commit API.
 - [ ] Long-lived BrandMeister connection/reconnect state machine.
