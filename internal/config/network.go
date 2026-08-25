@@ -7,9 +7,9 @@ import (
 )
 
 const (
-	NetworkBackendBrandMeister       = "brandmeister"
-	BrandMeisterDefaultPort          = 62031
-	BrandMeisterMaxHotspotPassword   = 20
+	NetworkBackendBrandMeister     = "brandmeister"
+	BrandMeisterDefaultPort        = 62031
+	BrandMeisterMaxHotspotPassword = 20
 )
 
 // NetworkInput is the untrusted network configuration submitted by a setup
