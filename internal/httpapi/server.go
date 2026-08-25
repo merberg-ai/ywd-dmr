@@ -33,7 +33,7 @@ func NewWithSecurity(state *core.State, securityManager *security.Manager, webRo
 func newServer(state *core.State, securityManager *security.Manager, webRoot, docsRoot string) http.Handler {
 	s := &Server{state: state, security: securityManager, mux: http.NewServeMux()}
 	s.routes(webRoot, docsRoot)
-	return securityHeaders(s.mux)
+	return securityHeaders(browserMutationProtection(s.mux))
 }
 
 func (s *Server) routes(webRoot, docsRoot string) {
