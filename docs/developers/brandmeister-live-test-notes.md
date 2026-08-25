@@ -4,17 +4,19 @@ This page records the installed Raspberry Pi 5 exercise of the real, non-persist
 
 ## Checkpoint
 
-Installed source checkpoint:
+Initial installed source checkpoint:
 
 ```text
 4483403478b638c9bec58cd40c2b62f7a2054898
 ```
 
-Installed release:
+Initial installed release:
 
 ```text
 dev-4483403-20260824203604
 ```
+
+The later registration-frequency retest used the `dev` implementation at checkpoint `90d33f0f04ee516aa199b37e054806cd1b203e55` or its installed build. The exact installed release timestamp was not copied into the validation notes.
 
 Listener:
 
@@ -22,7 +24,7 @@ Listener:
 0.0.0.0:8990
 ```
 
-The test box began fresh/unclaimed with no known-good configuration.
+Each full test exercise cleaned the box back to fresh/unclaimed state with no known-good configuration.
 
 ## Local infrastructure result
 
@@ -116,7 +118,7 @@ RPTACK authentication      PASS
 RPTC configuration         REJECTED
 ```
 
-The Hotspot Security authentication path is therefore now real-network proven.
+The Hotspot Security authentication path is therefore real-network proven.
 
 The retry again proved that the live test is non-persisting:
 
@@ -125,7 +127,7 @@ The retry again proved that the live test is non-persisting:
 - cleanup restored fresh unclaimed/missing-config state;
 - final daemon health passed.
 
-## Configuration rejection analysis
+## First configuration hypothesis — zero frequency
 
 YWD-DMR's original test `RPTC` packet was structurally correct and 302 bytes long, but deliberately reported:
 
@@ -138,46 +140,63 @@ Slots:        4 (simplex/DMO)
 
 Current BrandMeister hotspot guidance expects valid RX/TX frequency metadata for Homebrew/MMDVM registration. OpenSpot guidance specifically tells simplex users to enter the same valid UHF amateur frequency in both receive and transmit fields.
 
-The next YWD-DMR slice therefore changes the network candidate to include:
+YWD-DMR therefore added explicit request-only:
 
 ```text
 registration_frequency_hz
 ```
 
-This is explicit Homebrew/BrandMeister registration metadata. It does **not** mean YWD-DMR has gained an RF transmitter or that the daemon will key RF.
+This is Homebrew/BrandMeister registration metadata. It does **not** mean YWD-DMR has gained an RF transmitter or that the daemon will key RF.
 
-For the compatibility `RPTC` packet YWD-DMR will:
+The compatibility packet then used:
 
-- place the operator-supplied registration frequency in both RX and TX fields;
-- use informational power `01` rather than zero;
-- retain color code `01`;
-- retain slot/mode marker `4` for simplex/DMO-style registration;
-- retain zero location/height unless real station-location settings are added later;
-- still send no `DMRD` voice/data during the setup test.
+- operator-supplied registration frequency in both RX and TX fields;
+- informational power `01`;
+- color code `01`;
+- slot/mode marker `4` for simplex/DMO-style registration;
+- zero location coordinates/height;
+- no `DMRD` voice/data transmission.
 
-No frequency is silently invented by the daemon. The operator supplies the nominal registration frequency explicitly.
+## Third real BrandMeister contact — valid frequency still rejected
 
-## Current interpretation
-
-Current status is:
+The focused registration-frequency infrastructure gate passed. The live BrandMeister result remained:
 
 ```text
-DNS/UDP path                 PASS
-RPTL device-ID login         PASS
-RPTACK salt receipt          PASS
-RPTK wire construction       CROSS-CHECKED
-RPTK authentication          PASS
-RPTC zero-frequency metadata REJECTED
-network-test non-persistence PASS
-DMR voice/data transmission  NOT ATTEMPTED
-network persistence          NOT ATTEMPTED
+ok=false
+reason=config
 ```
 
-The next installed-machine gate is a focused live handshake using a real registration frequency in the `RPTC` metadata. If BrandMeister returns `ok`, the complete login/auth/config probe is proven and network-schema/commit work may begin. If it still returns `config`, the remaining RPTC fields need to be narrowed further.
+The test used registration frequency:
+
+```text
+446525000 Hz
+```
+
+This eliminates the original all-zero RX/TX frequency fields as the sole cause of the configuration rejection.
+
+At this point the tested chain is:
+
+```text
+DNS/UDP path                    PASS
+RPTL device-ID login            PASS
+RPTACK salt receipt             PASS
+RPTK wire construction          CROSS-CHECKED
+RPTK authentication             PASS
+RPTC packet length/layout       MATCHES G4KLX 302-BYTE FORMAT
+RPTC with zero frequency        REJECTED
+RPTC with 446525000 Hz RX/TX    REJECTED
+network-test non-persistence    PASS
+DMR voice/data transmission     NOT ATTEMPTED
+network persistence             NOT ATTEMPTED
+```
+
+Current G4KLX DMRGateway notes that a config-stage `MSTNAK` can represent a rejected declared configuration and gives an already-connected device ID as one example. BrandMeister also exposes Device Logs for authentication, verification, and wrong-configuration events. Therefore the next diagnostic should distinguish an ESSID/device-ID conflict from an RPTC identification-field compatibility problem before changing more registration fields.
+
+A standard simplex MMDVM client normally identifies the final package/hardware field with an MMDVM-family value such as `MMDVM_DMO`; YWD-DMR currently reports `YWD-DMR`. That is the next RPTC field to investigate only after a fresh temporary ESSID rules out an ID conflict.
 
 ## Safety result
 
-Neither public-network attempt persisted the master, password, backend, registration metadata, or test result. Neither incremented the known-good revision or created a rollback snapshot. No DMR voice/data frame was transmitted.
+All public-network attempts remained non-persisting. They did not save the master, password, backend, registration metadata, or test result; did not advance the known-good network state; and did not transmit DMR voice/data.
 
 This preserves the Alpha1 transaction rule:
 
