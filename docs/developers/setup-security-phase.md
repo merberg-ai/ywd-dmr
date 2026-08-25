@@ -92,23 +92,9 @@ The claim API is:
 POST /api/v1/setup/claim
 ```
 
-The request contains the claim code plus the first administrator username/password. The code is normalized for copy/paste convenience but compared in constant time. A wrong code does not change state. A successful claim:
+The request contains the claim code plus the first administrator username/password. The code is normalized for copy/paste convenience but compared in constant time. A wrong code does not change state. A successful claim creates the durable administrator password verifier, burns the bootstrap path, and creates an opaque in-memory browser session.
 
-1. validates the administrator username/password policy;
-2. creates a random password salt;
-3. derives the stored password verifier with standard-library PBKDF2-HMAC-SHA256;
-4. atomically writes `/var/lib/ywd-dmr/security.json` mode `0600`;
-5. marks the installation claimed;
-6. deletes the plaintext claim-code file on a best-effort basis;
-7. creates an opaque in-memory administrator session and sets it only in an HttpOnly `SameSite=Strict` cookie.
-
-The session token is not returned in JSON. On current HTTP LAN-test installs the cookie cannot use the browser `Secure` flag because the connection is not TLS; once normal remote/LAN security moves to HTTPS, authenticated cookies must be Secure as well.
-
-Claim is deliberately one-time. Once the durable security document exists, claim requests return a conflict and daemon startup will never silently regenerate a new claim code. If an existing `security.json` is malformed or unsupported, daemon startup fails closed rather than treating the machine as a new unclaimed appliance.
-
-The stored password record includes its algorithm, salt, and iteration count so the verifier can be upgraded later without guessing which KDF produced an old record. No plaintext administrator password is stored.
-
-Installed-appliance validation on the Raspberry Pi 5 is complete. The successful real claim returned HTTP `201`, created `security.json` as `0600 ywd-dmr:ywd-dmr`, deleted the plaintext claim code, authenticated the new cookie session, rejected claim reuse with `409`, preserved claimed state across daemon restart, discarded the memory-only session on restart, and did not regenerate a claim code on the claimed appliance. Intentional cleanup returned the box to a healthy unclaimed state with a fresh code. The first Pi 5 claim/PBKDF2 timing measurement was `0.516708s`.
+Installed-appliance validation on the Raspberry Pi 5 is complete. The first Pi 5 claim/PBKDF2 timing measurement was `0.516708s`.
 
 See [One-time Claim Validation Notes](claim-validation-notes.md) for the exact real-machine results.
 
@@ -124,62 +110,79 @@ POST /api/v1/auth/logout
 GET  /api/v1/auth/session
 ```
 
-`POST /api/v1/auth/login` verifies the supplied password against the persisted PBKDF2-HMAC-SHA256 record. Username comparison and password verification use the same generic invalid-credential response so the normal failure path does not disclose whether a username or password was wrong. The password KDF is still evaluated when the username is wrong, avoiding a cheap timing oracle.
+Wrong username and wrong password use the same generic failure and both execute the password KDF. Login sessions and throttling remain memory-only, so daemon restart clears them while durable administrator state survives.
 
-A successful login creates a fresh opaque session token, stores only its hash in daemon memory, and sets the token only in the HttpOnly `SameSite=Strict` cookie. Restarting the daemon clears all sessions while leaving the durable claimed/admin state intact.
-
-The first login throttle is intentionally small and understandable for an appliance UI:
-
-```text
-5 failed logins from one direct client IP inside 5 minutes
--> block further login attempts from that IP for 60 seconds
-```
-
-The throttle is memory-only and does not create a persistent lockout database. The daemon currently keys this from the direct TCP peer address and does not trust `X-Forwarded-For`; proxy-aware deployment rules will be defined when HTTPS/reverse-proxy support is introduced.
-
-`POST /api/v1/auth/logout` invalidates the current in-memory session, when present, and expires the browser cookie. Logout is idempotent from the client's point of view.
-
-Installed Pi 5 validation passed. Wrong username and wrong password both returned the identical HTTP `401` response and took `0.520663s` and `0.520534s` respectively; valid login returned HTTP `200` in `0.519940s`. Logout returned `204` and invalidated the token. Five failed logins returned `401`, the sixth returned `429` with `Retry-After: 59`, and daemon restart cleared the memory-only throttle while preserving durable admin state. A correct post-restart login returned `200` in `0.517669s`.
+Installed Pi 5 validation passed. Wrong username and wrong password took `0.520663s` and `0.520534s`; valid login took `0.519940s`. Logout invalidated the token. Five failures returned `401`, the sixth returned `429` with `Retry-After: 59`, and restart cleared the throttle while preserving durable admin state.
 
 See [Administrator Authentication Validation Notes](auth-validation-notes.md) for the exact real-machine results.
 
 ### 6. Roles and browser mutation protection
 
-The active security slice defines the server-side role hierarchy:
+The server-side role hierarchy is:
 
 ```text
 Observer < Operator < Admin
 ```
 
-Unknown roles fail closed. Protected handlers can require a minimum role and receive the authenticated principal through request context.
+Unknown roles fail closed. Protected handlers require a live session, enforce a minimum role, and receive the authenticated principal through request context.
 
-State-changing browser requests (`POST`, `PUT`, `PATCH`, `DELETE`) now pass through global browser-origin protection. Browser `Origin` must match the request scheme/Host when present, and `Sec-Fetch-Site` must be `same-origin` or `none` when present. Cross-site and same-site/different-origin browser mutations are rejected with HTTP `403`. Direct non-browser API clients that do not send browser origin headers remain usable.
+State-changing browser requests (`POST`, `PUT`, `PATCH`, `DELETE`) pass through global same-origin protection. `Origin`, when present, must match the request origin; `Sec-Fetch-Site`, when present, must be `same-origin` or `none`. Direct API clients remain usable because they do not normally send browser-origin headers.
 
-This slice does not yet create Operator/Observer accounts or expose configuration/radio controls. The first claimed account remains Admin. The authorization machinery is intentionally established before protected mutation endpoints are opened.
-
-See [Authorization and Browser Mutation Protection](authorization-model.md) for the detailed contract.
-
-### 7. Protected configuration commit APIs
-
-Once the role/origin slice is real-machine validated, protected endpoints can submit candidate settings through the known-good transaction path.
-
-The setup state progresses through daemon-owned states such as:
+This foundation is now installed-appliance validated on the Raspberry Pi 5. The runtime sequence was:
 
 ```text
-unclaimed
-claimed / identity incomplete
-identity complete / network incomplete
-network configured / audio incomplete
-ready
+direct API mutation        200
+same-origin browser        200
+cross-origin Origin        403
+cross-site fetch metadata  403
+same-site/different-origin 403
+cross-origin read-only GET 200
 ```
 
-Configuration changes follow validate -> test -> commit. A failed candidate or later BrandMeister connectivity test must not destroy the last known-good configuration.
+The unclaimed bootstrap code remained intact and final health passed.
+
+See [Authorization and Browser Mutation Protection](authorization-model.md) and [Authorization Validation Notes](authorization-validation-notes.md).
+
+### 7. Protected station-identity commit
+
+The first normal protected configuration mutation is implemented on `dev`:
+
+```text
+POST /api/v1/setup/identity/commit
+```
+
+It requires an Admin session and also passes through the global browser same-origin protection.
+
+The endpoint does not invent a second setup/configuration path. It submits the request to the existing known-good store as an untrusted candidate. Identity has no external service to probe, so this slice uses:
+
+```text
+candidate -> normalize/validate -> durable commit
+```
+
+A successful commit returns the normalized identity and daemon-owned revision, then advances runtime setup state only after durable storage succeeds:
+
+```text
+claimed / identity incomplete
+-> identity complete / next step network
+```
+
+A second valid commit increments the revision and lets the store rotate the old current snapshot to `known-good.previous.json`. Invalid candidates, unauthenticated requests, and rejected cross-origin requests must not replace known-good state or advance runtime setup state.
+
+Automated API tests cover missing-session rejection, normalization/persistence, runtime stage advancement, invalid-candidate preservation, second-commit revision increment, and cross-origin rejection before mutation.
+
+Installed Raspberry Pi validation is the next gate for this slice. It should prove the actual file modes/owners, revision 1 -> revision 2 behavior, restart persistence, previous-snapshot rotation, invalid-candidate protection, and final cleanup/health.
 
 ### 8. BrandMeister configuration
 
-Only after the configuration/security contract exists should the first network backend accept DMR identity, master selection, credentials, reconnect policy, and destination/talkgroup configuration.
+Only after the protected configuration contract is proven should the first network backend accept DMR identity, master selection, credentials, reconnect policy, and destination/talkgroup configuration.
 
-Network settings follow validate -> test -> commit. A failed BrandMeister test must not destroy the last known-good configuration.
+Network settings will use the fuller transaction:
+
+```text
+candidate -> validate -> connectivity test -> commit
+```
+
+A failed BrandMeister test must not destroy the last known-good configuration.
 
 ### 9. Guided WebUI wizard
 
@@ -187,11 +190,11 @@ The WebUI becomes a client of the same setup APIs used by future Android/CLI cli
 
 ## Security boundary during development
 
-The current LAN test dashboard is still not a production-ready authenticated interface. Do **not** router-forward or publicly expose it.
+The current LAN test dashboard is still not production-ready. Do **not** router-forward or publicly expose it.
 
-The identity-validation endpoint is callable without authentication because it only normalizes caller-supplied non-secret data and changes no state. `GET /api/v1/setup/status` exposes only coarse setup/configuration health metadata. `POST /api/v1/setup/claim` is the one deliberate unauthenticated setup mutation and requires the high-entropy bootstrap code available only from the local appliance filesystem.
+The public identity-validation endpoint is non-mutating. `POST /api/v1/setup/claim` remains the one deliberate unauthenticated setup mutation and requires the locally retrieved high-entropy bootstrap code.
 
-Normal login/logout and browser-origin filtering exist. Role authorization middleware exists but no protected configuration/network/radio mutation endpoint is exposed yet. HTTPS/WSS, trusted reverse-proxy rules, Secure-cookie deployment, and future device credentials remain separate work.
+Normal login/logout, role authorization, and browser-origin filtering exist. The new identity-commit endpoint is Admin-only. BrandMeister/network controls, radio controls, PTT, HTTPS/WSS trusted-proxy deployment, Secure-cookie deployment, and device credentials remain separate work.
 
 ## Current implementation status
 
@@ -204,18 +207,15 @@ Normal login/logout and browser-origin filtering exist. Role authorization middl
 - [x] Configuration-store test suite, full Go suite, vet, and build passed on Pi 5.
 - [x] Daemon-owned setup-state model and startup load/recovery state.
 - [x] Installed Pi 5 runtime exercise of missing/loaded/recovered/missing configuration state.
-- [x] One-time claim-code generation and fail-closed security initialization.
-- [x] First-admin persistent password-verifier format using standard-library PBKDF2-HMAC-SHA256.
-- [x] `POST /api/v1/setup/claim` with one-time semantics and opaque HttpOnly session cookie.
-- [x] `GET /api/v1/auth/session` for read-only current-session inspection.
-- [x] Local `sudo ywd-dmr claim-code` maintenance command.
-- [x] Installed-appliance exercise of one-time claim, code deletion, claimed restart, and session behavior.
-- [x] Administrator password-login/logout implementation with generic failures and in-memory throttling.
-- [x] Installed-appliance validation of login after restart, generic failures, throttle, logout, and restart-cleared sessions.
-- [x] Observer / Operator / Admin role hierarchy and reusable server-side authorization middleware.
-- [x] Browser Origin / `Sec-Fetch-Site` mutation protection implementation and automated tests.
-- [ ] Installed-appliance validation of role/origin security slice.
-- [ ] Protected configuration validate/test/commit API.
+- [x] One-time claim implementation and installed-appliance validation.
+- [x] Administrator password login/logout/throttling and installed-appliance validation.
+- [x] Observer / Operator / Admin role hierarchy and reusable authorization middleware.
+- [x] Browser Origin / `Sec-Fetch-Site` mutation protection.
+- [x] Installed-appliance validation of role/origin security foundation.
+- [x] Admin-protected `POST /api/v1/setup/identity/commit` implementation.
+- [x] Automated protected identity commit tests.
+- [ ] Installed-appliance validation of protected identity commit and rollback rotation.
+- [ ] BrandMeister candidate/test/commit configuration API.
 - [ ] WebUI first-run wizard.
 
 ## Promotion rule
