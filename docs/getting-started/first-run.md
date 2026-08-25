@@ -95,6 +95,8 @@ Example request:
 }
 ```
 
+Current BrandMeister guidance limits the Hotspot Security password to 20 characters. YWD-DMR therefore rejects an empty password, a password longer than 20 characters, or one containing control characters before any network test begins. BrandMeister also recommends avoiding special characters; YWD-DMR does not currently invent a stricter character whitelist beyond the documented length and control-character rules.
+
 The response never returns the password. It only returns normalized non-secret fields and whether a password was supplied. Leaving `master_port` at `0` uses the Homebrew default `62031`.
 
 This local validator is installed Pi 5 validated. It does **not** contact BrandMeister and does not save anything.
