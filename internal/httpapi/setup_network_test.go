@@ -18,6 +18,7 @@ func TestNetworkValidateRequiresAdminSession(t *testing.T) {
 		"backend":"brandmeister",
 		"master_address":"master.example.net",
 		"master_port":62031,
+		"registration_frequency_hz":446525000,
 		"password":"secret"
 	}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -38,6 +39,7 @@ func TestNetworkValidateNormalizesWithoutEchoingPassword(t *testing.T) {
 		"backend":" BrandMeister ",
 		"master_address":" BM3103.EXAMPLE.NET. ",
 		"master_port":0,
+		"registration_frequency_hz":446525000,
 		"password":"`+secret+`"
 	}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -57,6 +59,7 @@ func TestNetworkValidateNormalizesWithoutEchoingPassword(t *testing.T) {
 		`"backend":"brandmeister"`,
 		`"master_address":"bm3103.example.net"`,
 		`"master_port":62031`,
+		`"registration_frequency_hz":446525000`,
 		`"password_set":true`,
 	} {
 		if !strings.Contains(body, want) {
@@ -73,6 +76,7 @@ func TestNetworkValidateReturnsFieldErrors(t *testing.T) {
 		"backend":"other",
 		"master_address":"https://bad.example:62031/path",
 		"master_port":70000,
+		"registration_frequency_hz":0,
 		"password":""
 	}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -87,7 +91,7 @@ func TestNetworkValidateReturnsFieldErrors(t *testing.T) {
 	if !strings.Contains(body, `"valid":false`) {
 		t.Fatalf("expected invalid result: %s", body)
 	}
-	for _, field := range []string{"backend", "master_address", "master_port", "password"} {
+	for _, field := range []string{"backend", "master_address", "master_port", "registration_frequency_hz", "password"} {
 		if !strings.Contains(body, `"field":"`+field+`"`) {
 			t.Fatalf("expected field error for %s: %s", field, body)
 		}
@@ -102,6 +106,7 @@ func TestNetworkValidateRejectsCrossOriginBrowser(t *testing.T) {
 		"backend":"brandmeister",
 		"master_address":"master.example.net",
 		"master_port":62031,
+		"registration_frequency_hz":446525000,
 		"password":"secret"
 	}`))
 	req.Header.Set("Content-Type", "application/json")
