@@ -37,7 +37,9 @@ Fields:
 - `backend` — currently only `brandmeister` is accepted.
 - `master_address` — hostname or IP address only; no `http://`, `https://`, path, or embedded port.
 - `master_port` — UDP master port. `0` normalizes to the Homebrew default `62031`.
-- `password` — BrandMeister Hotspot Security password. It is accepted only as request input and is never returned by validation/test responses.
+- `password` — BrandMeister Hotspot Security password. Current BrandMeister guidance limits it to 20 characters. YWD-DMR rejects empty, over-20-character, and control-character-containing passwords before any live test. BrandMeister recommends avoiding special characters; YWD-DMR does not currently invent an extra punctuation whitelist.
+
+The password is accepted only as request input and is never returned by validation/test responses.
 
 ## Protected local validation API
 
@@ -150,7 +152,7 @@ ESSID 0     -> base DMR ID
 ESSID 1..99 -> (base DMR ID * 100) + ESSID
 ```
 
-For example, a base ID ending in seven digits with ESSID `01` becomes the usual nine-digit hotspot form. This derivation stays in the backend rather than changing the canonical station identity.
+For example, a seven-digit base ID with ESSID `01` becomes the usual nine-digit hotspot form. This derivation stays in the backend rather than changing the canonical station identity.
 
 ## Software-endpoint RPTC configuration
 
@@ -173,7 +175,9 @@ Whether BrandMeister accepts the neutral zero-RF software configuration is delib
 
 ## Retry and timeout behavior
 
-Each handshake stage is short and bounded. The current tester sends each stage at most twice with a roughly 1.5-second per-attempt wait, while the HTTP handler imposes a 10-second overall deadline.
+Each handshake stage is short and bounded. The setup tester sends each stage **once** and waits roughly 1.5 seconds for that stage's acknowledgement, while the HTTP handler imposes a 10-second overall deadline.
+
+This is intentionally conservative. Homebrew `RPTACK` packets do not identify which handshake stage they acknowledge. Retrying a UDP stage could leave a delayed duplicate acknowledgement in the socket and create ambiguity during the next stage. For setup validation, a false timeout is safer than a false success; the operator can simply run the Test action again.
 
 A master `MSTNAK` is mapped according to the stage being attempted:
 
@@ -200,6 +204,8 @@ The real tester is exercised against local UDP test masters, not the public netw
 - over-width Homebrew callsign returns `reason: config`.
 
 HTTP tests additionally verify that `/network/test` requires committed identity, rejects invalid/cross-origin candidates before invoking the tester, passes the known-good identity to the tester, does not echo the password, and does not advance the known-good revision.
+
+Local candidate tests explicitly verify that a 20-character Hotspot Security password is accepted and a 21-character password is rejected before the tester runs.
 
 ## What the live test must not do
 
