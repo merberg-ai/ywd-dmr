@@ -15,7 +15,7 @@ candidate
 
 A candidate that only passes local field validation is **not** known-good. A successful UDP socket open is also not enough. The network test is successful only after the BrandMeister/Homebrew master accepts login, password authentication, and the software endpoint configuration.
 
-The durable network commit remains closed until this real tester is validated on the installed appliance.
+The durable network commit remains closed until a complete real BrandMeister handshake succeeds on the installed appliance.
 
 ## Current Alpha1 candidate
 
@@ -74,7 +74,7 @@ The installed Raspberry Pi 5 validation proved normalization, password redaction
 
 ## Protected live test API
 
-Implemented on `dev` and awaiting installed-machine validation:
+Implemented and installed-machine validated for its safety/control behavior:
 
 ```text
 POST /api/v1/setup/network/test
@@ -118,13 +118,57 @@ unavailable
 These mean:
 
 - `login` — the master rejected the initial DMR/hotspot ID login;
-- `auth` — the master rejected the Hotspot Security password response;
+- `auth` — the master rejected the Hotspot Security response; verify the Hotspot Security password for the base DMR ID, not the SelfCare login password;
 - `config` — the master rejected the endpoint configuration, or the stored station identity cannot be represented in the Homebrew config block;
 - `timeout` — no acceptable reply arrived before the bounded deadline;
 - `network` — DNS/socket/UDP path failure;
 - `unavailable` — the master closed the test session or returned an unusable acknowledgement.
 
 No result contains the password, salt, SHA-256 response, or other challenge material.
+
+## First installed live test result
+
+The Raspberry Pi 5 live-test infrastructure passed its local/runtime gate using release:
+
+```text
+dev-4483403-20260824203604
+```
+
+The installed test proved:
+
+- network test fails closed with HTTP `409` before identity is committed;
+- cross-origin live test is rejected with HTTP `403` before UDP work;
+- a reserved `.invalid` master returns a structured `network` result;
+- failed tests leave known-good revision 1 byte-for-byte unchanged;
+- failed tests create no rollback snapshot;
+- setup remains `identity_complete / network`;
+- schema 1 remains identity-only;
+- cleanup restores a fresh unclaimed/missing-config appliance.
+
+The first public-network contact used:
+
+```text
+master: 3103.master.brandmeister.network
+port: 62031
+base DMR ID: 3196104
+ESSID: 02
+derived device ID: 319610402
+```
+
+BrandMeister accepted the initial `RPTL` stage and returned the salt, then rejected the `RPTK` authentication response:
+
+```json
+{
+  "ok": false,
+  "backend": "brandmeister",
+  "reason": "auth",
+  "duration_ms": 250
+}
+```
+
+The YWD-DMR `RPTK` construction was then cross-checked against the current G4KLX DMRGateway implementation: both use the raw four-byte `RPTACK` salt, append the password bytes, SHA-256 hash `salt || password`, and send `RPTK` + four-byte device ID + the 32-byte digest. Current evidence therefore points to the submitted Hotspot Security credential rather than a known wire-format mismatch.
+
+See [BrandMeister Live Test Notes](brandmeister-live-test-notes.md).
 
 ## BrandMeister/Homebrew probe
 
@@ -220,7 +264,7 @@ The setup tester is a credential/configuration probe, not the production network
 
 ## Durable commit comes later
 
-The current known-good schema stores only station identity. Network persistence will be added only after the real BrandMeister tester works on the installed Pi. That change requires an explicit schema/migration decision rather than silently changing schema 1.
+The current known-good schema stores only station identity. Network persistence will be added only after a complete real BrandMeister handshake succeeds on the installed Pi. That change requires an explicit schema/migration decision rather than silently changing schema 1.
 
 When network persistence lands:
 
@@ -240,8 +284,9 @@ When network persistence lands:
 - [x] Real bounded BrandMeister/Homebrew `RPTL -> RPTK -> RPTC -> RPTCL` tester implementation.
 - [x] Local UDP protocol tests for framing, auth rejection, timeout, and secret handling.
 - [x] Admin-protected `POST /api/v1/setup/network/test` wired to the real tester.
-- [ ] Installed Pi source/runtime validation of the live test endpoint.
-- [ ] Successful real BrandMeister handshake with operator credentials.
+- [x] Installed Pi source/runtime validation of the live test endpoint and non-persistence rules.
+- [x] First real BrandMeister contact reached `RPTK` authentication and produced a correctly classified `auth` rejection.
+- [ ] Successful real BrandMeister authentication and software configuration handshake with verified operator credential.
 - [ ] Known-good schema migration for tested network configuration.
 - [ ] Protected network commit endpoint.
 - [ ] Long-lived BrandMeister connection/reconnect state machine.
