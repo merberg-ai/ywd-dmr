@@ -38,6 +38,7 @@ func TestNetworkTestRequiresCommittedIdentity(t *testing.T) {
 		"backend":"brandmeister",
 		"master_address":"bm.example.test",
 		"master_port":62031,
+		"registration_frequency_hz":446525000,
 		"password":"secret"
 	}`)
 	rr := httptest.NewRecorder()
@@ -75,6 +76,7 @@ func TestNetworkTestUsesKnownGoodIdentityWithoutEchoingPassword(t *testing.T) {
 		"backend":"brandmeister",
 		"master_address":"BM.EXAMPLE.TEST.",
 		"master_port":0,
+		"registration_frequency_hz":446525000,
 		"password":"`+secret+`"
 	}`)
 	rr := httptest.NewRecorder()
@@ -92,7 +94,7 @@ func TestNetworkTestUsesKnownGoodIdentityWithoutEchoingPassword(t *testing.T) {
 	if tester.identity.Callsign != "N0CALL" || tester.identity.DMRID != 1234567 || tester.identity.ESSID != 1 {
 		t.Fatalf("unexpected identity passed to tester: %+v", tester.identity)
 	}
-	if tester.candidate.MasterAddress != "bm.example.test" || tester.candidate.MasterPort != config.BrandMeisterDefaultPort || tester.candidate.Password != secret {
+	if tester.candidate.MasterAddress != "bm.example.test" || tester.candidate.MasterPort != config.BrandMeisterDefaultPort || tester.candidate.RegistrationFrequencyHz != 446_525_000 || tester.candidate.Password != secret {
 		t.Fatalf("unexpected candidate passed to tester: %+v", tester.candidate)
 	}
 
@@ -118,6 +120,7 @@ func TestNetworkTestRejectsInvalidCandidateBeforeTester(t *testing.T) {
 		"backend":"other",
 		"master_address":"https://bad.example/path",
 		"master_port":70000,
+		"registration_frequency_hz":0,
 		"password":""
 	}`)
 	rr := httptest.NewRecorder()
@@ -144,6 +147,7 @@ func TestNetworkTestRejectsCrossOriginBeforeTester(t *testing.T) {
 		"backend":"brandmeister",
 		"master_address":"bm.example.test",
 		"master_port":62031,
+		"registration_frequency_hz":446525000,
 		"password":"secret"
 	}`)
 	req.Header.Set("Origin", "http://evil.example")
