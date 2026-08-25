@@ -26,7 +26,7 @@ func TestValidateNetworkCandidateNormalizesBrandMeister(t *testing.T) {
 		t.Fatalf("unexpected master port %d", candidate.MasterPort)
 	}
 	if candidate.Password != "radio-secret" {
-		t.Fatal("password must be preserved internally for the future connection test")
+		t.Fatal("password must be preserved internally for the connection test")
 	}
 	if result.Normalized.PasswordSet != true {
 		t.Fatal("expected password_set=true")
@@ -34,7 +34,7 @@ func TestValidateNetworkCandidateNormalizesBrandMeister(t *testing.T) {
 }
 
 func TestNetworkValidationDoesNotEchoPassword(t *testing.T) {
-	secret := "do-not-echo-this-password"
+	secret := "no-echo-secret"
 	_, result := ValidateNetworkCandidate(NetworkInput{
 		Backend:       "brandmeister",
 		MasterAddress: "127.0.0.1",
@@ -42,6 +42,9 @@ func TestNetworkValidationDoesNotEchoPassword(t *testing.T) {
 		Password:      secret,
 	})
 
+	if !result.Valid {
+		t.Fatalf("expected valid result: %+v", result.Errors)
+	}
 	serialized := result.Normalized.Backend + result.Normalized.MasterAddress
 	if strings.Contains(serialized, secret) {
 		t.Fatal("network validation summary leaked password")
@@ -77,4 +80,36 @@ func TestValidateNetworkCandidateAcceptsIPv6(t *testing.T) {
 	if candidate.MasterAddress != "2001:db8::1" {
 		t.Fatalf("unexpected normalized IPv6 %q", candidate.MasterAddress)
 	}
+}
+
+func TestValidateNetworkCandidateAcceptsTwentyCharacterHotspotPassword(t *testing.T) {
+	password := strings.Repeat("a", BrandMeisterMaxHotspotPassword)
+	_, result := ValidateNetworkCandidate(NetworkInput{
+		Backend:       "brandmeister",
+		MasterAddress: "bm.example.net",
+		MasterPort:    62031,
+		Password:      password,
+	})
+	if !result.Valid {
+		t.Fatalf("expected %d-character password to be valid: %+v", BrandMeisterMaxHotspotPassword, result.Errors)
+	}
+}
+
+func TestValidateNetworkCandidateRejectsLongHotspotPassword(t *testing.T) {
+	password := strings.Repeat("a", BrandMeisterMaxHotspotPassword+1)
+	_, result := ValidateNetworkCandidate(NetworkInput{
+		Backend:       "brandmeister",
+		MasterAddress: "bm.example.net",
+		MasterPort:    62031,
+		Password:      password,
+	})
+	if result.Valid {
+		t.Fatal("expected over-length BrandMeister password to be rejected")
+	}
+	for _, fieldErr := range result.Errors {
+		if fieldErr.Field == "password" && fieldErr.Code == "invalid_password" {
+			return
+		}
+	}
+	t.Fatalf("expected password field error: %+v", result.Errors)
 }
