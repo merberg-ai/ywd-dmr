@@ -93,7 +93,7 @@ Machine-readable result reasons are:
 ```text
 ok
 login
- auth
+auth
 config
 timeout
 network
