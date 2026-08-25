@@ -20,7 +20,7 @@ The first on-air milestone is successful when a user can install YWD-DMR, finish
 - [x] Known-good configuration schema, atomic persistence, and rollback/recovery core
 - [x] Daemon-owned read-only setup status
 - [x] Authentication and one-time first-run claim — claim plus normal password login/logout/throttling are real-machine validated on Pi 5
-- [ ] Admin / Operator / Observer authorization model — implementation and automated tests are on `dev`; installed validation remains
+- [x] Admin / Operator / Observer authorization model and browser mutation protection — implementation, automated tests, and Pi 5 runtime validation complete
 - [ ] Structured logging and support bundle
 - [ ] SQLite event/history persistence where relational storage is justified
 
@@ -90,28 +90,11 @@ Before DMR/network work grew, the `dev` appliance workflow was exercised on real
 
 ### Real-machine results
 
-On an Ubuntu host with active UFW and existing ham-radio/network services, YWD-DMR successfully:
+On an Ubuntu host with active UFW and existing ham-radio/network services, YWD-DMR successfully installed, survived service/reinstall/uninstall cycles, preserved unrelated firewall/services, and passed the final promotion gate.
 
-- installed on `0.0.0.0:8989` without disturbing other listeners;
-- started and remained healthy under systemd;
-- served the branded WebUI to another device on the LAN;
-- passed installed-appliance verification;
-- completed software-only uninstall while preserving persistent configuration/data;
-- reinstalled from the preserved state;
-- detected an equivalent UFW LAN rule as user-owned and used it without claiming ownership;
-- created, verified, diagnosed, and later removed exactly its own tagged managed UFW rule;
-- preserved unrelated firewall rules and services;
-- passed authoritative software-only and purge uninstall verification;
-- refused installation when a preserved configured port belonged to another process;
-- deliberately moved the listener to another port and preserved that choice across reinstall.
+On a fresh Raspberry Pi 5 ARM64 host, the service survived reboot, full purge, protected safety backup, and a genuinely clean reinstall that selected port 8990 while the default port was intentionally occupied.
 
-On a Raspberry Pi 5 running a freshly installed ARM64 OS, YWD-DMR setup and installation completed from a clean machine. A real reboot returned `ywd-dmrd.service` enabled and active with the listener and health API intact. The same Pi completed a full purge with a protected external safety archive, passed the purge verifier, then completed a genuinely clean reinstall while default port 8989 was intentionally occupied; the installer selected free port 8990 without disturbing the unrelated listener.
-
-The installer-created-rule tests exposed and fixed a UFW command-grammar compatibility issue. Final pre-promotion testing also exposed and fixed root-owned checkout build artifacts left by a sudo installer build. After that fix, a sudo reinstall returned `dist/` ownership to the normal user and an immediate normal-user build succeeded.
-
-The final promotion gate passed shell syntax, maintenance CLI regression, managed-UFW grammar regression, `go test ./...`, `go vet ./...`, normal-user build, and `git diff --check`. GitHub CI also passed on the promotion PR.
-
-The tested appliance foundation was promoted from `dev` to `main` through PR #2. `dev` was then fast-forwarded to that merge commit before new Alpha1 development resumed.
+The tested appliance foundation was promoted from `dev` to `main` through PR #2. `main` remains that known-good milestone while Phase 2 security/configuration work continues on `dev`.
 
 ## Current Alpha1 focus — setup, security, and configuration
 
@@ -119,35 +102,19 @@ The active work establishes one authoritative setup/configuration/security contr
 
 Current progress:
 
-- [x] Radio identity input and normalized model.
-- [x] Callsign, base DMR ID, and ESSID validation.
-- [x] `POST /api/v1/setup/identity/validate` as a non-mutating API.
-- [x] Installed Pi 5 exercise of identity validation and strict HTTP/JSON behavior.
-- [x] Durable known-good configuration file-store implementation with schema/revision, atomic writes, rollback snapshot, invalid-candidate protection, and recovery tests.
-- [x] Config-store unit suite, full Go suite, vet, and build passed on Pi 5 at the `2a889bb` checkpoint.
-- [x] Daemon startup loads known-good configuration and records missing/loaded/recovered/error state.
-- [x] Read-only `GET /api/v1/setup/status` with method/API tests.
-- [x] Pi 5 installed-runtime exercise of missing -> loaded -> recovered -> missing setup status, including the expected recovery journal warning and final healthy daemon.
-- [x] One-time high-entropy claim-code generation in restricted persistent state.
-- [x] Local `sudo ywd-dmr claim-code` retrieval path.
-- [x] First-admin password verifier format using standard-library PBKDF2-HMAC-SHA256 with random salt and stored iteration count.
-- [x] `POST /api/v1/setup/claim` with one-time semantics and opaque HttpOnly `SameSite=Strict` session cookie.
-- [x] `GET /api/v1/auth/session` current-session inspection.
-- [x] Pi 5 installed-appliance exercise of wrong-code rejection, successful claim, claim-code deletion, one-time reuse rejection, claimed restart persistence, memory-only session invalidation on restart, no code regeneration while claimed, cleanup, and final health.
-- [x] First Pi 5 PBKDF2/claim timing captured: `0.516708s` at 310000 iterations.
-- [x] `POST /api/v1/auth/login` implementation using the persisted password verifier and a fresh opaque in-memory session.
-- [x] Generic wrong-username/wrong-password authentication failure behavior.
-- [x] In-memory direct-client login throttle: five failures in five minutes -> 60-second block.
-- [x] `POST /api/v1/auth/logout` session invalidation and cookie expiration.
-- [x] Automated login/logout/throttle tests.
-- [x] Pi 5 installed-appliance validation of login after restart, generic failures, throttling, logout, restart-cleared sessions/throttle, cleanup, and final health.
-- [x] Pi 5 login timings captured: wrong username `0.520663s`, wrong password `0.520534s`, valid login `0.519940s`, post-restart valid login `0.517669s`.
-- [x] Observer / Operator / Admin role hierarchy and fail-closed role comparison implemented.
-- [x] Reusable cookie-session authorization middleware implemented with authenticated-principal request context.
-- [x] Browser Origin / `Sec-Fetch-Site` protection implemented for state-changing methods, while preserving direct non-browser API clients.
-- [x] Automated authorization and browser-origin tests added on `dev`.
-- [ ] Pi 5 installed-appliance validation of the role/origin security slice.
-- [ ] Protected configuration validate/test/commit workflow.
+- [x] Radio identity input/normalized model and public non-mutating validation API.
+- [x] Known-good file store with schema/revision, atomic writes, rollback snapshot, invalid-candidate protection, and recovery.
+- [x] Daemon-owned setup status and Pi 5 missing/loaded/recovered/missing runtime validation.
+- [x] One-time claim and first-admin password verifier with full Pi 5 installed validation.
+- [x] Password login/logout, generic failures, memory-only throttle/session model, and full Pi 5 installed validation.
+- [x] Observer / Operator / Admin hierarchy and fail-closed role comparison.
+- [x] Reusable cookie-session authorization middleware with authenticated-principal request context.
+- [x] Browser Origin / `Sec-Fetch-Site` protection for state-changing methods while preserving direct non-browser clients.
+- [x] Pi 5 installed validation of direct/same-origin acceptance, cross-origin/cross-site rejection, read-only GET compatibility, bootstrap preservation, and final health.
+- [x] First Admin-protected configuration mutation implemented: `POST /api/v1/setup/identity/commit`.
+- [x] Automated identity-commit tests cover missing-session rejection, normalized durable commit, invalid-candidate preservation, revision increment, setup-state advancement, and cross-origin rejection before mutation.
+- [ ] Pi 5 installed validation of identity commit, revision 1 -> 2, previous-snapshot rotation, restart persistence, invalid-candidate preservation, and cleanup.
+- [ ] BrandMeister candidate -> validate -> connectivity test -> commit workflow.
 - [ ] Guided WebUI first-run wizard.
 
-The current LAN test dashboard remains development-only. Do not router-forward or publicly expose it. One-time claim and normal login are validated; role/origin middleware is the active security gate before configuration commits, radio/network controls, or secret reads are opened.
+The current LAN test dashboard remains development-only. Do not router-forward or publicly expose it. Claim, login, role authorization, and browser-origin protection are now validated; the active gate is the first real Admin-protected known-good configuration commit.
