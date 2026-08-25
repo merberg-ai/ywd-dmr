@@ -21,14 +21,20 @@ The first on-air milestone is successful when a user can install YWD-DMR, finish
 - [x] Daemon-owned read-only setup status
 - [x] Authentication and one-time first-run claim — claim plus normal password login/logout/throttling are real-machine validated on Pi 5
 - [x] Admin / Operator / Observer authorization model and browser mutation protection — implementation, automated tests, and Pi 5 runtime validation complete
+- [x] First Admin-protected known-good configuration mutation and real rollback rotation/recovery validation on Pi 5
 - [ ] Structured logging and support bundle
 - [ ] SQLite event/history persistence where relational storage is justified
 
 ## DMR/network
 
-- [ ] Network-backend interface
-- [ ] BrandMeister backend
-- [ ] DMR ID / ESSID / master configuration
+- [x] Network-backend connectivity-test interface and structured failure reasons
+- [x] First BrandMeister candidate model and protected local validation API
+- [ ] Real BrandMeister/Homebrew login-auth-config tester
+- [ ] Protected network test endpoint
+- [ ] Known-good schema migration for tested network configuration
+- [ ] Protected network commit endpoint
+- [ ] BrandMeister long-lived backend
+- [ ] DMR ID / ESSID / master configuration integration
 - [ ] Connection/reconnect state machine
 - [ ] Talkgroup destination model
 - [ ] Callsign/DMR-ID resolver abstraction
@@ -94,27 +100,54 @@ On an Ubuntu host with active UFW and existing ham-radio/network services, YWD-D
 
 On a fresh Raspberry Pi 5 ARM64 host, the service survived reboot, full purge, protected safety backup, and a genuinely clean reinstall that selected port 8990 while the default port was intentionally occupied.
 
-The tested appliance foundation was promoted from `dev` to `main` through PR #2. `main` remains that known-good milestone while Phase 2 security/configuration work continues on `dev`.
+The tested appliance foundation was promoted from `dev` to `main` through PR #2. `main` remains that known-good milestone while Alpha1 development continues on `dev`.
 
-## Current Alpha1 focus — setup, security, and configuration
+## Completed setup/security/configuration chain
 
-The active work establishes one authoritative setup/configuration/security contract before BrandMeister and audio work expands. See [Setup and Security Phase](setup-security-phase.md), [Known-good Configuration Store](configuration-store.md), and [Authorization and Browser Mutation Protection](authorization-model.md).
+The complete first protected setup chain is now proven on the Raspberry Pi 5:
+
+```text
+one-time claim
+  -> durable Admin credential
+  -> memory-only login session
+  -> Admin authorization
+  -> browser same-origin protection
+  -> identity candidate validation
+  -> atomic known-good commit
+  -> revision rotation
+  -> previous-snapshot recovery
+```
+
+Real-machine identity-commit validation proved revision `1 -> 2`, correct `0600 ywd-dmr:ywd-dmr` snapshot ownership, byte-for-byte preservation after a rejected invalid candidate, restart loading of revision `2`, and recovery of API-created previous revision `1` after deliberate corruption of the current snapshot. Cleanup returned the box to an unclaimed/missing-config state with a fresh claim code and healthy daemon.
+
+See [Protected Station-Identity Commit Validation Notes](identity-commit-validation-notes.md).
+
+## Current Alpha1 focus — BrandMeister setup contract
+
+BrandMeister work can now build on a proven security/configuration foundation instead of creating its own special-case persistence.
 
 Current progress:
 
-- [x] Radio identity input/normalized model and public non-mutating validation API.
-- [x] Known-good file store with schema/revision, atomic writes, rollback snapshot, invalid-candidate protection, and recovery.
-- [x] Daemon-owned setup status and Pi 5 missing/loaded/recovered/missing runtime validation.
-- [x] One-time claim and first-admin password verifier with full Pi 5 installed validation.
-- [x] Password login/logout, generic failures, memory-only throttle/session model, and full Pi 5 installed validation.
-- [x] Observer / Operator / Admin hierarchy and fail-closed role comparison.
-- [x] Reusable cookie-session authorization middleware with authenticated-principal request context.
-- [x] Browser Origin / `Sec-Fetch-Site` protection for state-changing methods while preserving direct non-browser clients.
-- [x] Pi 5 installed validation of direct/same-origin acceptance, cross-origin/cross-site rejection, read-only GET compatibility, bootstrap preservation, and final health.
-- [x] First Admin-protected configuration mutation implemented: `POST /api/v1/setup/identity/commit`.
-- [x] Automated identity-commit tests cover missing-session rejection, normalized durable commit, invalid-candidate preservation, revision increment, setup-state advancement, and cross-origin rejection before mutation.
-- [ ] Pi 5 installed validation of identity commit, revision 1 -> 2, previous-snapshot rotation, restart persistence, invalid-candidate preservation, and cleanup.
-- [ ] BrandMeister candidate -> validate -> connectivity test -> commit workflow.
-- [ ] Guided WebUI first-run wizard.
+- [x] Backend-neutral network candidate model.
+- [x] BrandMeister backend identifier and default UDP port `62031` normalization.
+- [x] Protected `POST /api/v1/setup/network/validate` endpoint.
+- [x] Password-redacted validation response using `password_set` rather than returning the supplied secret.
+- [x] Backend-neutral connectivity-test result interface with structured reasons such as `login`, `auth`, `config`, `timeout`, and `network`.
+- [x] Automated network candidate/API tests added on `dev`.
+- [ ] Installed Pi validation of protected BrandMeister candidate validation.
+- [ ] Real short-lived Homebrew handshake tester.
+- [ ] Test endpoint that only reports success after login/auth/config are actually accepted by the master.
+- [ ] Network schema migration + tested commit into the same known-good/previous-snapshot transaction.
+- [ ] Long-lived BrandMeister session/reconnect state machine.
 
-The current LAN test dashboard remains development-only. Do not router-forward or publicly expose it. Claim, login, role authorization, and browser-origin protection are now validated; the active gate is the first real Admin-protected known-good configuration commit.
+The active transaction rule is:
+
+```text
+candidate -> local validation -> real connectivity/authentication test -> commit
+```
+
+Local validation alone is never allowed to become a fake connectivity success.
+
+See [DMR Network Backend and BrandMeister Setup Contract](network-backend-contract.md) and [Setup and Security Phase](setup-security-phase.md).
+
+The current LAN test dashboard remains development-only. Do not router-forward or publicly expose it. HTTPS/WSS trusted-proxy deployment, Secure-cookie deployment, persistent multi-user/device credentials, radio controls, and PTT safety remain later work.
