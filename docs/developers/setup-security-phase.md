@@ -6,103 +6,99 @@ This phase turns the tested YWD-DMR appliance into something a normal operator c
 
 The phase is complete when a fresh installation can be claimed once, an administrator can enter and validate the station identity, settings can be tested before they replace known-good configuration, and the daemon can safely expose protected setup/control operations to the WebUI and future Android client.
 
-This work intentionally comes before BrandMeister connection code. Network credentials, DMR identity, audio choices, and vocoder settings all need one authoritative configuration/security model rather than separate ad-hoc files or browser-only state.
+This work intentionally comes before the long-lived BrandMeister connection. Network credentials, DMR identity, audio choices, and vocoder settings all need one authoritative configuration/security model rather than separate ad-hoc files or browser-only state.
 
-## Implementation order
+## Proven setup/security foundation
 
-### 1. Radio identity model and validation
+The following chain is now installed-appliance validated on the Raspberry Pi 5:
 
-First-run setup collects three pieces of radio identity:
+```text
+one-time claim
+  -> durable Admin password verifier
+  -> memory-only authenticated session
+  -> Observer / Operator / Admin authorization
+  -> browser same-origin mutation protection
+  -> protected station-identity candidate
+  -> atomic known-good commit
+  -> previous-snapshot rotation
+  -> restart persistence and explicit recovery
+```
+
+The real identity-commit exercise produced revision `1`, then revision `2`, confirmed both snapshots as mode `0600` and owner `ywd-dmr:ywd-dmr`, proved a rejected invalid candidate did not change either file, loaded revision `2` after restart, then deliberately corrupted current revision `2` and recovered the API-created previous revision `1` snapshot with an explicit runtime `recovered` state and journal warning.
+
+See [Protected Station-Identity Commit Validation Notes](identity-commit-validation-notes.md).
+
+## 1. Radio identity model and validation
+
+First-run setup collects:
 
 - **Callsign** — the operator/station's base amateur-radio callsign.
-- **DMR ID** — the base numeric DMR ID, kept separate from any hotspot suffix.
+- **DMR ID** — the base numeric DMR ID, separate from any hotspot suffix.
 - **ESSID** — a number from 0 through 99 used by networks/backends that need a distinct hotspot/device identity.
 
-The daemon owns normalization and validation. Clients may perform friendly local checks, but server validation is authoritative.
-
-Initial API:
+The public, non-mutating validation API is:
 
 ```text
 POST /api/v1/setup/identity/validate
 ```
 
-This endpoint is deliberately non-mutating. It does not save configuration, create an account, connect to a DMR network, or transmit anything.
+The daemon owns normalization and validation. Clients may perform friendly local checks, but server validation is authoritative.
 
-The first slice was exercised on the installed Raspberry Pi 5 appliance. A valid lowercase/space-padded callsign normalized correctly, invalid callsign/DMR-ID/ESSID values returned three field errors, an unknown JSON field returned HTTP 400, and GET against the POST-only endpoint returned HTTP 405 with `Allow: POST`.
+## 2. Known-good configuration store
 
-### 2. Known-good configuration store
-
-The daemon has a small durable configuration store with operations equivalent to:
-
-```text
-load current known-good
-validate candidate
-commit candidate
-recover from previous snapshot
-```
-
-The persistent store belongs under `/var/lib/ywd-dmr/`, which is writable by the restricted `ywd-dmr` service account. The protected listener/service environment under `/etc/ywd-dmr/` remains separate.
-
-The first implementation deliberately uses atomic JSON snapshots and only the Go standard library. It keeps:
+The daemon keeps:
 
 ```text
 /var/lib/ywd-dmr/known-good.json
 /var/lib/ywd-dmr/known-good.previous.json
 ```
 
-A candidate is normalized and validated before any durable state changes. On later commits, the previous known-good value is written to the rollback snapshot before the current snapshot is atomically replaced. If the current snapshot is unreadable or invalid, load may recover from a valid previous snapshot and explicitly report that recovery state.
+A candidate is validated before durable state changes. Later commits rotate the old current snapshot to the previous rollback snapshot before atomically replacing current. If current is unreadable or invalid, startup can explicitly recover a valid previous snapshot.
 
-See [Known-good Configuration Store](configuration-store.md) for the schema, atomic-write rules, rollback behavior, and security boundary.
+The real protected identity API has now proven this same rotation/recovery path on installed storage rather than only through unit fixtures.
 
-The configuration-store unit suite, full Go suite, vet, and normal-user build passed on the Raspberry Pi 5 at the `2a889bb` development checkpoint.
+See [Known-good Configuration Store](configuration-store.md).
 
-### 3. Daemon-owned setup status
-
-The daemon loads the known-good store at startup and records only the minimum setup metadata needed by clients. It exposes:
+## 3. Daemon-owned setup status
 
 ```text
 GET /api/v1/setup/status
 ```
 
-The public setup status never returns the stored callsign/DMR ID/ESSID or any future secret. It reports whether configuration is missing, loaded, recovered from the previous snapshot, or unreadable; whether identity is configured; and the current daemon-owned revision when available.
+The public setup status reports coarse configuration health and setup progress without returning stored identity or secrets.
 
-A startup recovery from `known-good.previous.json` is visible as `configuration.state: recovered` and is also written to the daemon log as a warning. A hard load failure is exposed only as `configuration.state: error`; detailed filesystem/decoder errors remain server-side.
-
-This runtime path was exercised on the installed Raspberry Pi 5. The daemon correctly reported `missing`, then `loaded` after a valid fixture was installed, then `recovered` after the current snapshot was deliberately corrupted while a valid previous snapshot remained. The service journal emitted the expected recovery warning. Removing both fixtures and restarting returned the daemon to `missing`, and final health diagnostics passed.
-
-### 4. One-time installation claim
-
-A fresh installation has a real bootstrap security state.
-
-When no valid `/var/lib/ywd-dmr/security.json` exists, the daemon creates a 120-bit one-time claim code in:
+Configuration state may be:
 
 ```text
-/var/lib/ywd-dmr/claim-code
+missing
+loaded
+recovered
+error
 ```
 
-The file is mode `0600` inside the restricted state directory and is intended to be retrieved locally with:
+A recovered previous snapshot is never silently treated as normal; setup status and the service journal both say recovery occurred.
+
+## 4. One-time installation claim
+
+A fresh appliance creates a high-entropy claim code in the restricted state directory and exposes it locally through:
 
 ```bash
 sudo ywd-dmr claim-code
 ```
 
-The claim API is:
+The deliberate unauthenticated bootstrap mutation is:
 
 ```text
 POST /api/v1/setup/claim
 ```
 
-The request contains the claim code plus the first administrator username/password. The code is normalized for copy/paste convenience but compared in constant time. A wrong code does not change state. A successful claim creates the durable administrator password verifier, burns the bootstrap path, and creates an opaque in-memory browser session.
+Successful claim creates the first Admin password verifier, burns the one-time bootstrap path, and creates an opaque memory-only browser session. Claim is fully installed-appliance validated. The first Pi 5 PBKDF2/claim timing measurement was `0.516708s`.
 
-Installed-appliance validation on the Raspberry Pi 5 is complete. The first Pi 5 claim/PBKDF2 timing measurement was `0.516708s`.
+See [One-time Claim Validation Notes](claim-validation-notes.md).
 
-See [One-time Claim Validation Notes](claim-validation-notes.md) for the exact real-machine results.
+## 5. Administrator login
 
-### 5. Administrator login
-
-Normal administrator password login after daemon restart is implemented and real-machine validated.
-
-Implemented endpoints:
+Implemented and real-machine validated:
 
 ```text
 POST /api/v1/auth/login
@@ -110,114 +106,170 @@ POST /api/v1/auth/logout
 GET  /api/v1/auth/session
 ```
 
-Wrong username and wrong password use the same generic failure and both execute the password KDF. Login sessions and throttling remain memory-only, so daemon restart clears them while durable administrator state survives.
+Wrong username and wrong password use the same generic failure and execute the password KDF. Login sessions and throttling are memory-only; daemon restart clears them while durable Admin state survives.
 
-Installed Pi 5 validation passed. Wrong username and wrong password took `0.520663s` and `0.520534s`; valid login took `0.519940s`. Logout invalidated the token. Five failures returned `401`, the sixth returned `429` with `Retry-After: 59`, and restart cleared the throttle while preserving durable admin state.
+Pi 5 measurements included wrong username `0.520663s`, wrong password `0.520534s`, valid login `0.519940s`, and post-restart valid login `0.517669s`.
 
-See [Administrator Authentication Validation Notes](auth-validation-notes.md) for the exact real-machine results.
+See [Administrator Authentication Validation Notes](auth-validation-notes.md).
 
-### 6. Roles and browser mutation protection
+## 6. Roles and browser mutation protection
 
-The server-side role hierarchy is:
+Server-side hierarchy:
 
 ```text
 Observer < Operator < Admin
 ```
 
-Unknown roles fail closed. Protected handlers require a live session, enforce a minimum role, and receive the authenticated principal through request context.
+Unknown roles fail closed. Protected handlers require a live session and minimum role.
 
-State-changing browser requests (`POST`, `PUT`, `PATCH`, `DELETE`) pass through global same-origin protection. `Origin`, when present, must match the request origin; `Sec-Fetch-Site`, when present, must be `same-origin` or `none`. Direct API clients remain usable because they do not normally send browser-origin headers.
+State-changing browser methods (`POST`, `PUT`, `PATCH`, `DELETE`) pass through same-origin protection. `Origin`, when present, must match the request origin; `Sec-Fetch-Site`, when present, must be `same-origin` or `none`. Direct non-browser API clients remain usable.
 
-This foundation is now installed-appliance validated on the Raspberry Pi 5. The runtime sequence was:
+This layer is installed-machine validated. See [Authorization and Browser Mutation Protection](authorization-model.md) and [Authorization Validation Notes](authorization-validation-notes.md).
 
-```text
-direct API mutation        200
-same-origin browser        200
-cross-origin Origin        403
-cross-site fetch metadata  403
-same-site/different-origin 403
-cross-origin read-only GET 200
-```
+## 7. Protected station-identity commit
 
-The unclaimed bootstrap code remained intact and final health passed.
-
-See [Authorization and Browser Mutation Protection](authorization-model.md) and [Authorization Validation Notes](authorization-validation-notes.md).
-
-### 7. Protected station-identity commit
-
-The first normal protected configuration mutation is implemented on `dev`:
+Implemented and now fully installed-machine validated:
 
 ```text
 POST /api/v1/setup/identity/commit
 ```
 
-It requires an Admin session and also passes through the global browser same-origin protection.
+It is Admin-only and same-origin protected for browsers.
 
-The endpoint does not invent a second setup/configuration path. It submits the request to the existing known-good store as an untrusted candidate. Identity has no external service to probe, so this slice uses:
+Identity has no external service to test, so its transaction is:
 
 ```text
 candidate -> normalize/validate -> durable commit
 ```
 
-A successful commit returns the normalized identity and daemon-owned revision, then advances runtime setup state only after durable storage succeeds:
+Runtime setup state advances only after durable commit succeeds. The Pi 5 validation proved revision increment, previous-snapshot rotation, restart persistence, invalid-candidate preservation, and recovery from an API-created previous snapshot.
+
+## 8. BrandMeister/network configuration — active slice
+
+Network configuration adds an external dependency and therefore uses a stricter transaction:
 
 ```text
-claimed / identity incomplete
--> identity complete / next step network
+candidate
+  -> local validation
+  -> real connectivity/authentication test
+  -> durable commit
 ```
 
-A second valid commit increments the revision and lets the store rotate the old current snapshot to `known-good.previous.json`. Invalid candidates, unauthenticated requests, and rejected cross-origin requests must not replace known-good state or advance runtime setup state.
+Local validation alone must never be called a successful network test.
 
-Automated API tests cover missing-session rejection, normalization/persistence, runtime stage advancement, invalid-candidate preservation, second-commit revision increment, and cross-origin rejection before mutation.
+### Candidate model
 
-Installed Raspberry Pi validation is the next gate for this slice. It should prove the actual file modes/owners, revision 1 -> revision 2 behavior, restart persistence, previous-snapshot rotation, invalid-candidate protection, and final cleanup/health.
+The first request model contains:
 
-### 8. BrandMeister configuration
+```json
+{
+  "backend": "brandmeister",
+  "master_address": "master.example.net",
+  "master_port": 62031,
+  "password": "your hotspot password"
+}
+```
 
-Only after the protected configuration contract is proven should the first network backend accept DMR identity, master selection, credentials, reconnect policy, and destination/talkgroup configuration.
+CallsSign/DMR ID/ESSID are not duplicated here. The network backend receives the already known-good station identity.
 
-Network settings will use the fuller transaction:
+`master_port: 0` normalizes to the normal BrandMeister/Homebrew UDP port `62031`.
+
+### Protected local validation
+
+Implemented on `dev`:
 
 ```text
-candidate -> validate -> connectivity test -> commit
+POST /api/v1/setup/network/validate
 ```
 
-A failed BrandMeister test must not destroy the last known-good configuration.
+This endpoint requires Admin authentication because the request contains the BrandMeister hotspot password. It is also subject to browser same-origin filtering.
 
-### 9. Guided WebUI wizard
+Its response never echoes the password. A valid result returns only a non-secret normalized summary such as:
 
-The WebUI becomes a client of the same setup APIs used by future Android/CLI clients. It should use plain-language pages, explain DMR terms in context, and offer useful retry/troubleshooting guidance when a test fails.
+```json
+{
+  "valid": true,
+  "normalized": {
+    "backend": "brandmeister",
+    "master_address": "master.example.net",
+    "master_port": 62031,
+    "password_set": true
+  },
+  "errors": []
+}
+```
+
+No known-good file, revision, or setup stage changes during local network validation.
+
+### Backend test contract
+
+`internal/dmrnet` defines the real connectivity-test interface before the live tester is written. Structured result reasons include:
+
+```text
+ok
+login
+auth
+config
+timeout
+network
+unavailable
+```
+
+The first real BrandMeister tester will map the established Homebrew master handshake stages into these reasons. That lets the WebUI distinguish a rejected ID, wrong hotspot password, rejected configuration, and an unreachable master.
+
+The actual network test/commit endpoints remain intentionally closed until the real tester exists.
+
+See [DMR Network Backend and BrandMeister Setup Contract](network-backend-contract.md).
+
+## 9. BrandMeister live tester and durable network commit
+
+The next implementation sequence is:
+
+1. implement a bounded short-lived Homebrew login/auth/config probe;
+2. expose a protected test endpoint that uses it;
+3. prove that failed tests do not modify known-good state;
+4. make an explicit known-good schema/migration change for network settings;
+5. allow durable network commit only after the candidate passes the real test;
+6. then build the long-lived connection/reconnect state machine.
+
+The tester must never transmit DMR voice/data, log the password, or turn a DNS/UDP socket-open result into a false credential success.
+
+## 10. Guided WebUI wizard
+
+The WebUI will use the same setup APIs as future Android/CLI clients, with plain-language DMR explanations and useful troubleshooting for failed network tests.
 
 ## Security boundary during development
 
-The current LAN test dashboard is still not production-ready. Do **not** router-forward or publicly expose it.
+The current LAN test dashboard remains development-only. Do **not** router-forward or publicly expose it.
 
-The public identity-validation endpoint is non-mutating. `POST /api/v1/setup/claim` remains the one deliberate unauthenticated setup mutation and requires the locally retrieved high-entropy bootstrap code.
+The public identity-validation endpoint is non-mutating. `POST /api/v1/setup/claim` remains the one deliberate unauthenticated setup mutation requiring the local bootstrap code. Normal login/logout, role authorization, browser-origin filtering, and protected identity commit are validated.
 
-Normal login/logout, role authorization, and browser-origin filtering exist. The new identity-commit endpoint is Admin-only. BrandMeister/network controls, radio controls, PTT, HTTPS/WSS trusted-proxy deployment, Secure-cookie deployment, and device credentials remain separate work.
+The new network-validation endpoint is Admin-only because it accepts a secret. There is still no network commit, BrandMeister production session, radio control, or PTT endpoint. HTTPS/WSS trusted-proxy deployment, Secure-cookie deployment, and device credentials are separate work.
 
 ## Current implementation status
 
-- [x] Radio identity input/normalized model.
-- [x] Callsign, DMR ID, and ESSID server-side validation.
-- [x] `POST /api/v1/setup/identity/validate`.
-- [x] Installed Pi 5 validation of identity/API behavior.
-- [x] Durable known-good configuration repository implementation.
-- [x] Atomic persistent storage and rollback/recovery unit tests.
-- [x] Configuration-store test suite, full Go suite, vet, and build passed on Pi 5.
-- [x] Daemon-owned setup-state model and startup load/recovery state.
-- [x] Installed Pi 5 runtime exercise of missing/loaded/recovered/missing configuration state.
-- [x] One-time claim implementation and installed-appliance validation.
-- [x] Administrator password login/logout/throttling and installed-appliance validation.
-- [x] Observer / Operator / Admin role hierarchy and reusable authorization middleware.
-- [x] Browser Origin / `Sec-Fetch-Site` mutation protection.
-- [x] Installed-appliance validation of role/origin security foundation.
-- [x] Admin-protected `POST /api/v1/setup/identity/commit` implementation.
-- [x] Automated protected identity commit tests.
-- [ ] Installed-appliance validation of protected identity commit and rollback rotation.
-- [ ] BrandMeister candidate/test/commit configuration API.
+- [x] Radio identity validation and public validation API.
+- [x] Known-good configuration store and startup recovery model.
+- [x] One-time claim and durable first Admin.
+- [x] Password login/logout/throttling.
+- [x] Observer / Operator / Admin authorization.
+- [x] Browser same-origin mutation protection.
+- [x] Protected station-identity commit.
+- [x] Full Pi 5 identity commit / revision rotation / previous-snapshot recovery validation.
+- [x] Backend-neutral network candidate model.
+- [x] BrandMeister local validation and default-port normalization.
+- [x] Admin-protected `POST /api/v1/setup/network/validate`.
+- [x] Password-redacted network validation response.
+- [x] Backend-neutral connectivity-test result/reason interface.
+- [x] Automated network candidate/API tests on `dev`.
+- [ ] Installed Pi validation of protected network candidate validation.
+- [ ] Real BrandMeister/Homebrew connectivity/authentication tester.
+- [ ] Protected network test API.
+- [ ] Known-good schema migration for network configuration.
+- [ ] Tested protected network commit API.
+- [ ] Long-lived BrandMeister connection/reconnect state machine.
 - [ ] WebUI first-run wizard.
 
 ## Promotion rule
 
-Keep this work on `dev` until each slice has automated tests and the new operational/security behavior has been exercised on real hardware where relevant. `main` remains the last promoted known-good milestone.
+Keep this work on `dev` until each operational/security slice has automated coverage and relevant real-hardware validation. `main` remains the last promoted known-good milestone.
