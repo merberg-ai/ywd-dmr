@@ -19,6 +19,7 @@ The copy in this folder is the canonical documentation for the matching YWD-DMR 
 - [Architecture](developers/architecture.md)
 - [Alpha 1 plan](developers/alpha1-plan.md)
 - [Setup and security phase](developers/setup-security-phase.md)
+- [LAN Admin Test Console](developers/admin-test-console.md)
 - [Known-good configuration store](developers/configuration-store.md)
 - [Authorization and browser mutation protection](developers/authorization-model.md)
 - [Protected station-identity commit validation](developers/identity-commit-validation-notes.md)
