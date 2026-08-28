@@ -2,7 +2,7 @@
 
 The development WebUI includes an **Admin Test Console** so repeated YWD-DMR setup and BrandMeister testing can be performed from a browser instead of long shell/curl blocks.
 
-This is a development convenience, not a security bypass. The console uses the same `/api/v1/` endpoints, authentication, role checks, browser same-origin protection, validation rules, and non-persistence guarantees as any other client.
+This is a development convenience, not a security bypass. The console uses the same `/api/v1/` endpoints, authentication, role checks, browser same-origin protection, validation rules, and durable configuration transaction as any future client.
 
 ## Safety boundary
 
@@ -16,7 +16,7 @@ Do not:
 
 Future public access requires the planned HTTPS/WSS and trusted-proxy deployment contract.
 
-The test console does **not** provide shell access, sudo access, arbitrary file operations, or an API that bypasses normal authorization.
+The console does **not** provide shell access, sudo access, arbitrary file operations, or an API that bypasses normal authorization.
 
 ## What the console can do
 
@@ -26,62 +26,51 @@ The console currently provides browser controls for:
 2. claiming a fresh appliance with the one-time local claim code;
 3. Admin login and logout;
 4. committing station identity;
-5. locally validating a BrandMeister network candidate;
-6. running the real short-lived BrandMeister Homebrew test;
-7. displaying the structured API result;
-8. refreshing setup/session state.
-
-The live BrandMeister test still follows the daemon transaction rule:
-
-```text
-candidate
-  -> local validation
-  -> real login/auth/config test
-  -> no persistence yet
-```
-
-The browser does not gain a network-commit operation merely because it can run the test.
+5. locally validating a BrandMeister candidate;
+6. running the real short-lived non-persisting BrandMeister test;
+7. testing and durably committing the exact same accepted network candidate;
+8. displaying structured password-redacted results;
+9. refreshing setup/session state.
 
 ## Claiming a fresh development install
 
-The one-time claim code is intentionally available only on the local machine. Retrieve it through SSH or a local terminal:
+Retrieve the one-time code locally:
 
 ```bash
 sudo ywd-dmr claim-code
 ```
 
-Paste that code into the **Claim fresh appliance** section, choose the Admin username/password, and press **Claim & Sign In**.
-
-The claim code is sent to the normal protected bootstrap endpoint and is not stored by the WebUI.
+Paste it into **Claim fresh appliance**, choose the Admin username/password, and press **Claim & Sign In**.
 
 ## Password handling
 
-Password inputs are normal browser password fields.
-
 The console:
 
+- uses browser password inputs;
 - does not write passwords to Local Storage or Session Storage;
 - does not put passwords in URLs;
 - does not print submitted passwords into the result panel;
-- clears the Admin password after claim/login attempts;
-- clears the BrandMeister Hotspot Security password after a live network test;
-- applies an additional client-side redaction pass before displaying structured responses.
+- clears Admin passwords after claim/login attempts;
+- clears the BrandMeister password after live test or test-and-commit;
+- applies a client-side redaction pass before displaying responses.
 
-The server remains authoritative. Existing server rules still ensure network-test responses do not echo the Hotspot Security password, challenge salt, or authentication digest.
+The daemon remains authoritative. Server responses do not echo the Hotspot Security password, challenge salt, or authentication digest.
+
+After a successful durable network commit, the Hotspot Security password is stored only in the daemon's restricted revision-bound secret store. Normal known-good JSON contains only `password_set: true`.
 
 ## Station identity
-
-The identity form calls:
 
 ```text
 POST /api/v1/setup/identity/commit
 ```
 
-It requires an authenticated Admin session. Callsign, base DMR ID, and ESSID are submitted through the same known-good configuration path already validated on the Raspberry Pi.
+Admin-only. Callsign, base DMR ID, and ESSID are committed through the known-good configuration path.
+
+Once tested network configuration exists, a later identity commit preserves that network and its credential in the new revision instead of silently dropping it.
 
 ## BrandMeister candidate
 
-The current development form includes:
+Fields:
 
 ```text
 master hostname/IP
@@ -90,42 +79,113 @@ registration frequency in Hz
 Hotspot Security password
 ```
 
-The registration frequency is Homebrew registration metadata. Entering a value does **not** enable an RF transmitter or cause YWD-DMR to key an attached MMDVM modem.
+Registration frequency is Homebrew metadata only; YWD-DMR still does not key RF.
 
-The field expects **Hz**, not MHz. Examples:
+The field expects **Hz**, not MHz:
 
 ```text
 147.420 MHz -> 147420000 Hz
 446.525 MHz -> 446525000 Hz
 ```
 
-A value such as `14742000` means 14.742 MHz and is rejected by the current BrandMeister candidate validator because it is outside YWD-DMR's supported Homebrew registration range.
-
-**Validate Candidate** calls:
+## Validate Candidate
 
 ```text
 POST /api/v1/setup/network/validate
 ```
 
-This performs local normalization/validation only. A missing Hotspot Security password is also reported as a validation error; the password is not remembered from a previous operation.
+Local validation/normalization only. No network I/O and no persistence.
 
-**Run Live BM Test** calls:
+## Run Live BM Test
 
 ```text
 POST /api/v1/setup/network/test
 ```
 
-The browser asks for confirmation before the real test. The daemon then performs the bounded temporary Homebrew setup handshake. The current tester sends no `DMRD` voice/data and does not persist the network candidate.
+Runs a fresh bounded real Homebrew login/auth/config handshake and then closes the temporary session. It sends no `DMRD` voice/data and changes no durable network state.
+
+This remains the preferred diagnostic button when you only want to check credentials/connectivity.
+
+## Test & Commit Network
+
+```text
+POST /api/v1/setup/network/test-and-commit
+```
+
+This button is intentionally more explicit because it changes durable configuration.
+
+The browser asks for confirmation, then the daemon performs:
+
+```text
+candidate
+  -> local validation
+  -> real BrandMeister login/auth/config test
+  -> only if accepted: durable schema-2 commit
+```
+
+The test and commit happen in **one request**. There is no reusable "test passed" token that could accidentally approve a changed form.
+
+If BrandMeister rejects the candidate, the result shows:
+
+```json
+{
+  "committed": false,
+  "test": {
+    "ok": false,
+    "reason": "auth"
+  }
+}
+```
+
+and the existing known-good revision remains unchanged.
+
+On success the result includes the new revision and only the non-secret network summary:
+
+```json
+{
+  "committed": true,
+  "revision": 2,
+  "network": {
+    "backend": "brandmeister",
+    "master_address": "3103.master.brandmeister.network",
+    "master_port": 62031,
+    "registration_frequency_hz": 446525000,
+    "password_set": true
+  },
+  "test": {
+    "ok": true,
+    "reason": "ok"
+  }
+}
+```
+
+After success, setup status advances to approximately:
+
+```text
+stage: network_complete
+next step: audio
+```
+
+The dashboard Network card shows **CONFIGURED** even though the long-lived BrandMeister runtime is not connected yet. **CONFIGURED is not the same as CONNECTED.**
+
+## Current proven Homebrew compatibility
+
+The Pi 5 has now produced a real `ok` result with:
+
+```text
+RPTL login                         PASS
+RPTK Hotspot Security              PASS
+RPTC configuration                 PASS
+YWD-owned numeric software ID      PASS
+MMDVM_DMO compatibility profile    PASS
+RPTCL close                        SENT
+```
+
+No voice/data was transmitted by the setup test.
 
 ## Result panel
 
-The result panel shows:
-
-- the operation name;
-- HTTP status;
-- structured response from the daemon.
-
-Typical live reasons remain:
+Typical network test reasons:
 
 ```text
 ok
@@ -137,16 +197,14 @@ network
 unavailable
 ```
 
-This makes the browser console useful for the same protocol-debugging work previously performed with long curl scripts.
+The console now treats an HTTP-200 response containing `ok:false`, `valid:false`, or `committed:false` as an unsuccessful operation visually rather than coloring every HTTP 200 as success.
 
 ## What is intentionally missing
 
-There is currently no browser button to wipe security state, delete known-good configuration, restart services, run shell commands, or perform an arbitrary appliance reset.
+There is still no browser button to wipe security state, delete known-good configuration, restart services, run shell commands, or perform an arbitrary appliance reset.
 
-Those operations are more powerful than the normal Control API and should not be smuggled into the UI merely for convenience. If a development-only reset workflow is added later, it must have an explicit server-side contract, strong Admin checks, clear LAN/development gating, and documentation before it is exposed.
+Those operations need explicit daemon-side contracts and strong development/LAN gating before they belong in the UI.
 
 ## Relationship to the future production WebUI
 
-This console is useful scaffolding, but it is not the final first-run wizard. As Alpha 1 matures, proven pieces can be promoted into the normal guided UI while developer-only diagnostics remain clearly separated.
-
-The important rule is that both use the same daemon-owned API and safety model rather than maintaining a special browser-only implementation.
+This console is scaffolding for proving the real daemon APIs. Proven pieces can later become the guided setup wizard while developer diagnostics remain clearly separated.
