@@ -202,33 +202,71 @@ Current upstream MMDVM-Host uses a date-style version string in the 40-byte soft
 20260528
 ```
 
-YWD-DMR's temporary connectivity tester now changes only this remaining identification field while keeping `MMDVM_DMO` as the package/profile:
+The focused probe changed only this identification field while keeping the accepted-looking simplex package/profile:
 
 ```text
 software ID: 20260528
 package ID:  MMDVM_DMO
 ```
 
-This is a narrow interoperability experiment in the short-lived tester only. It is not the product identity contract for the future long-lived YWD-DMR backend, and it does not mean `ywd-dmrd` owns or keys an MMDVM modem.
+The real BrandMeister result was:
 
-At this point the tested chain is:
+```json
+{
+  "ok": true,
+  "backend": "brandmeister",
+  "reason": "ok",
+  "message": "BrandMeister accepted login, hotspot authentication, and software-endpoint configuration.",
+  "duration_ms": 341
+}
+```
+
+This is the first real-master end-to-end setup success for YWD-DMR. It proves:
 
 ```text
-DNS/UDP path                      PASS
-RPTL device-ID login              PASS
-RPTACK salt receipt               PASS
-RPTK wire construction            CROSS-CHECKED
-RPTK authentication               PASS
-RPTC packet length/layout         MATCHES 302-BYTE HOMEBREW FORMAT
-RPTC with zero frequency          REJECTED
-RPTC with 446525000 Hz RX/TX      REJECTED
-RPTC on fresh ESSID 03            REJECTED
-ESSID conflict hypothesis         UNLIKELY
-MMDVM_DMO package-profile probe   REJECTED
-MMDVM software/version ID probe   NEXT
-network-test non-persistence      PASS
-DMR voice/data transmission       NOT ATTEMPTED
-network persistence               NOT ATTEMPTED
+RPTL login/auth identity         PASS
+RPTACK challenge/salt            PASS
+RPTK Hotspot Security            PASS
+RPTACK authentication            PASS
+RPTC registration/configuration  PASS
+RPTCL close                      SENT
+```
+
+No `DMRD` voice/data was transmitted, and network settings were still not persisted.
+
+The result strongly indicates that BrandMeister validates or otherwise depends on the software/version field format/content. It does not yet prove that the exact upstream value `20260528` is required.
+
+## Fourth configuration hypothesis — YWD-DMR-owned numeric software ID
+
+To avoid adopting another project's exact version string as YWD-DMR's permanent identity, the next one-variable probe keeps every other accepted field unchanged and changes only:
+
+```text
+software ID: 20260528 -> 20260827
+package ID:  MMDVM_DMO
+```
+
+`20260827` is a YWD-DMR-owned date-style compatibility identifier for this experiment. If BrandMeister accepts it, the evidence will support a numeric/date-style format requirement rather than an exact MMDVMHost-version allowlist. If it is rejected, the long-lived backend needs an explicit compatibility policy before network persistence is enabled.
+
+Current chain:
+
+```text
+DNS/UDP path                         PASS
+RPTL device-ID login                 PASS
+RPTACK salt receipt                  PASS
+RPTK wire construction               CROSS-CHECKED
+RPTK authentication                  PASS
+RPTC packet length/layout            MATCHES 302-BYTE HOMEBREW FORMAT
+RPTC with zero frequency             REJECTED
+RPTC with 446525000 Hz RX/TX         REJECTED
+RPTC on fresh ESSID 03               REJECTED
+ESSID conflict hypothesis            UNLIKELY
+MMDVM_DMO package-profile alone      REJECTED
+MMDVM 20260528 software-ID profile   ACCEPTED
+full temporary setup handshake       PASS
+YWD numeric software-ID probe        NEXT
+network-test non-persistence         PASS
+DMR voice/data transmission          NOT ATTEMPTED
+network persistence                  NOT ATTEMPTED
 ```
 
 ## Safety result
@@ -241,4 +279,4 @@ The Alpha1 transaction rule remains:
 candidate -> local validation -> real connectivity/authentication test -> commit
 ```
 
-The durable network commit remains closed until the real setup test reaches `ok`.
+The durable network commit remains closed until the compatibility identity used by the future long-lived backend is chosen and proven.
