@@ -138,24 +138,7 @@ Power:        00
 Slots:        4 (simplex/DMO)
 ```
 
-Current BrandMeister hotspot guidance expects valid RX/TX frequency metadata for Homebrew/MMDVM registration. OpenSpot guidance specifically tells simplex users to enter the same valid UHF amateur frequency in both receive and transmit fields.
-
-YWD-DMR therefore added explicit request-only:
-
-```text
-registration_frequency_hz
-```
-
-This is Homebrew/BrandMeister registration metadata. It does **not** mean YWD-DMR has gained an RF transmitter or that the daemon will key RF.
-
-The compatibility packet then used:
-
-- operator-supplied registration frequency in both RX and TX fields;
-- informational power `01`;
-- color code `01`;
-- slot/mode marker `4` for simplex/DMO-style registration;
-- zero location coordinates/height;
-- no `DMRD` voice/data transmission.
+Current BrandMeister hotspot guidance expects valid RX/TX frequency metadata for Homebrew/MMDVM registration. YWD-DMR therefore added explicit request-only `registration_frequency_hz` metadata. The compatibility packet used the same supplied frequency in both RX and TX fields, informational power `01`, color code `01`, and slot/mode marker `4`.
 
 ## Third real BrandMeister contact — valid frequency still rejected
 
@@ -166,43 +149,38 @@ ok=false
 reason=config
 ```
 
-The test used registration frequency:
+The test used:
 
 ```text
 446525000 Hz
 ```
 
-This eliminates the original all-zero RX/TX frequency fields as the sole cause of the configuration rejection.
+This eliminates all-zero RX/TX frequency fields as the sole cause.
 
 ## Fourth real BrandMeister contact — fresh ESSID also rejected at config
 
-After the LAN Admin Test Console was added, the operator committed:
+Using the LAN Admin Test Console, the operator committed:
 
 ```text
 KJ6YWD / 3196104 / ESSID 03
 ```
 
-which derives Homebrew device ID:
+which derives Homebrew device ID `319610403`. The identity commit succeeded as revision 2.
+
+A local validation attempt also caught a units typo: `14742000` is 14.742 MHz, not 147.420 MHz; the correct API value is `147420000`.
+
+A separate live BrandMeister test with a locally valid candidate and the verified Hotspot Security credential again returned `reason: config`. This makes an already-connected `319610402` session an unlikely explanation: both `319610402` and `319610403` authenticated and then failed at the same RPTC stage.
+
+## Second configuration hypothesis — package/profile identifier
+
+The next compatibility build changed only the final Homebrew package/profile field:
 
 ```text
-319610403
+software ID: YWD-DMR
+package ID:  MMDVM_DMO
 ```
 
-The identity commit succeeded as revision 2.
-
-A local candidate-validation attempt also demonstrated an input-unit mistake clearly in the UI:
-
-```text
-registration_frequency_hz = 14742000
-```
-
-That value is 14.742 MHz, not 147.420 MHz, so local validation correctly rejected it. The same validation response also reported `password_set: false` because the Hotspot Security field was empty for that particular validation attempt. The correct 147.420 MHz value in this API is:
-
-```text
-147420000
-```
-
-A separate live BrandMeister test then completed authentication and again returned:
+`MMDVM_DMO` is the upstream simplex MMDVM profile used with slot marker `4`. The live test still returned:
 
 ```json
 {
@@ -210,65 +188,57 @@ A separate live BrandMeister test then completed authentication and again return
   "backend": "brandmeister",
   "reason": "config",
   "message": "BrandMeister rejected the Homebrew registration metadata after successful authentication.",
-  "duration_ms": 507
+  "duration_ms": 291
 }
 ```
 
-Because `/api/v1/setup/network/test` performs local candidate validation before opening the UDP probe, reaching `reason: config` proves that the live request used a locally valid candidate and valid Hotspot Security credential.
+Therefore the package/profile identifier alone is not the cause.
 
-This fresh ESSID result makes an already-connected `319610402` session an unlikely explanation for the persistent RPTC rejection. Both `319610402` and `319610403` have now reached successful Homebrew authentication and then failed at the same configuration stage.
+## Third configuration hypothesis — software/version identifier
 
-## Second configuration hypothesis — package/profile identifier
-
-Current simplex MMDVM/Homebrew code uses slot marker `4` and an MMDVM-family package/profile identifier. For a generic simplex MMDVM path, current MMDVM-derived code uses:
+Current upstream MMDVM-Host uses a date-style version string in the 40-byte software/version field. At the time of this probe the upstream `Version.h` value is:
 
 ```text
-MMDVM_DMO
+20260528
 ```
 
-YWD-DMR had been sending:
+YWD-DMR's temporary connectivity tester now changes only this remaining identification field while keeping `MMDVM_DMO` as the package/profile:
 
 ```text
-software ID: YWD-DMR
-package ID:  YWD-DMR
-```
-
-The next focused compatibility build keeps YWD-DMR's own software identity in the software field but changes only the final package/profile field to:
-
-```text
-software ID: YWD-DMR
+software ID: 20260528
 package ID:  MMDVM_DMO
 ```
 
-This is an interoperability profile, not a claim that `ywd-dmrd` owns, controls, or keys an attached MMDVM modem. The daemon remains radio-less and the live setup tester still sends no `DMRD` voice/data.
+This is a narrow interoperability experiment in the short-lived tester only. It is not the product identity contract for the future long-lived YWD-DMR backend, and it does not mean `ywd-dmrd` owns or keys an MMDVM modem.
 
 At this point the tested chain is:
 
 ```text
-DNS/UDP path                    PASS
-RPTL device-ID login            PASS
-RPTACK salt receipt             PASS
-RPTK wire construction          CROSS-CHECKED
-RPTK authentication             PASS
-RPTC packet length/layout       MATCHES G4KLX 302-BYTE FORMAT
-RPTC with zero frequency        REJECTED
-RPTC with 446525000 Hz RX/TX    REJECTED
-RPTC on fresh ESSID 03          REJECTED
-ESSID conflict hypothesis       UNLIKELY
-MMDVM_DMO package-profile test  NEXT
-network-test non-persistence    PASS
-DMR voice/data transmission     NOT ATTEMPTED
-network persistence             NOT ATTEMPTED
+DNS/UDP path                      PASS
+RPTL device-ID login              PASS
+RPTACK salt receipt               PASS
+RPTK wire construction            CROSS-CHECKED
+RPTK authentication               PASS
+RPTC packet length/layout         MATCHES 302-BYTE HOMEBREW FORMAT
+RPTC with zero frequency          REJECTED
+RPTC with 446525000 Hz RX/TX      REJECTED
+RPTC on fresh ESSID 03            REJECTED
+ESSID conflict hypothesis         UNLIKELY
+MMDVM_DMO package-profile probe   REJECTED
+MMDVM software/version ID probe   NEXT
+network-test non-persistence      PASS
+DMR voice/data transmission       NOT ATTEMPTED
+network persistence               NOT ATTEMPTED
 ```
 
 ## Safety result
 
-All public-network attempts remained non-persisting. They did not save the master, password, backend, registration metadata, or test result; did not advance the known-good network state; and did not transmit DMR voice/data.
+All public-network attempts remain non-persisting. They do not save the master, password, backend, registration metadata, or test result; do not advance durable network state; and do not transmit DMR voice/data.
 
-This preserves the Alpha1 transaction rule:
+The Alpha1 transaction rule remains:
 
 ```text
 candidate -> local validation -> real connectivity/authentication test -> commit
 ```
 
-The durable network commit remains closed.
+The durable network commit remains closed until the real setup test reaches `ok`.
