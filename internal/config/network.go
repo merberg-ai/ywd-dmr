@@ -15,10 +15,10 @@ const (
 )
 
 // NetworkInput is the untrusted network configuration submitted by a setup
-// client. Password is accepted here because the connectivity test needs it, but
-// validation/test responses never echo the secret back to the client.
-// RegistrationFrequencyHz is Homebrew/BrandMeister registration metadata. It
-// does not imply that YWD-DMR itself owns or keys an RF transmitter.
+// client. Password is accepted here because connectivity/authentication tests
+// need it, but validation/test/commit responses never echo the secret back to
+// the client. RegistrationFrequencyHz is Homebrew/BrandMeister registration
+// metadata. It does not imply that YWD-DMR itself owns or keys an RF transmitter.
 type NetworkInput struct {
 	Backend                 string `json:"backend"`
 	MasterAddress           string `json:"master_address"`
@@ -27,14 +27,26 @@ type NetworkInput struct {
 	Password                string `json:"password"`
 }
 
-// NetworkCandidate is the normalized internal form passed to a network backend
-// test. It is not itself a response type because Password must never be echoed.
+// NetworkCandidate is the normalized internal form passed from validation to a
+// network backend test and, only after that exact test succeeds, to durable
+// commit. It is not itself a response type because Password must never be echoed.
 type NetworkCandidate struct {
 	Backend                 string
 	MasterAddress           string
 	MasterPort              int
 	RegistrationFrequencyHz int
 	Password                string
+}
+
+// StoredNetworkConfig is the non-secret network shape stored in known-good
+// configuration schema 2. The Hotspot Security password is deliberately kept
+// out of this document and is stored in a revision-bound restricted secret file.
+type StoredNetworkConfig struct {
+	Backend                 string `json:"backend"`
+	MasterAddress           string `json:"master_address"`
+	MasterPort              int    `json:"master_port"`
+	RegistrationFrequencyHz int    `json:"registration_frequency_hz"`
+	PasswordSet             bool   `json:"password_set"`
 }
 
 // NetworkSummary is the non-secret normalized shape safe to return to clients.
@@ -118,6 +130,16 @@ func ValidateNetworkCandidate(input NetworkInput) (NetworkCandidate, NetworkVali
 		Errors: errs,
 	}
 	return candidate, result
+}
+
+func storedNetworkFromCandidate(candidate NetworkCandidate) StoredNetworkConfig {
+	return StoredNetworkConfig{
+		Backend:                 candidate.Backend,
+		MasterAddress:           candidate.MasterAddress,
+		MasterPort:              candidate.MasterPort,
+		RegistrationFrequencyHz: candidate.RegistrationFrequencyHz,
+		PasswordSet:             candidate.Password != "",
+	}
 }
 
 func normalizeMasterAddress(value string) string {
