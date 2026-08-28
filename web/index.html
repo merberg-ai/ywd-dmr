@@ -29,7 +29,7 @@
 
     <section class="grid">
       <article class="card"><h2>Core</h2><div class="value" id="core-state">—</div><p id="version">Loading…</p></article>
-      <article class="card"><h2>Network</h2><div class="value" id="network-state">—</div><p>BrandMeister setup is under active test.</p></article>
+      <article class="card"><h2>Network</h2><div class="value" id="network-state">—</div><p>BrandMeister setup and persistence are under active test.</p></article>
       <article class="card"><h2>Vocoder</h2><div class="value" id="vocoder-state">—</div><p>No-vocoder mode is valid by design.</p></article>
       <article class="card"><h2>TX / RX</h2><div class="value muted-value">DISABLED</div><p>PTT stays disabled until TX leases and the audio runtime exist.</p></article>
     </section>
@@ -122,7 +122,7 @@
           <div class="panel-head">
             <div>
               <h2>3 · BrandMeister Candidate</h2>
-              <p>Validate locally or run the real short-lived Homebrew login/auth/config probe. Nothing here commits network settings.</p>
+              <p>Validate locally, run a non-persisting live probe, or test and commit the exact same candidate as durable schema-2 network configuration.</p>
             </div>
           </div>
 
@@ -140,13 +140,15 @@
               </label>
               <label>Hotspot Security password
                 <input id="network-password" name="password" type="password" autocomplete="off">
-                <small>BrandMeister Hotspot Security, not the SelfCare login password.</small>
+                <small>BrandMeister Hotspot Security, not the SelfCare login password. A successful durable commit stores it only in the daemon's restricted revision-bound secret store.</small>
               </label>
             </div>
             <div class="button-row">
               <button class="button secondary" id="network-validate" type="button">Validate Candidate</button>
               <button class="button danger-outline" id="network-test" type="button">Run Live BM Test</button>
+              <button class="button" id="network-commit" type="button">Test & Commit Network</button>
             </div>
+            <small><strong>Test & Commit Network</strong> performs a fresh real BrandMeister handshake and saves settings only if that exact candidate is accepted.</small>
           </form>
         </article>
 
