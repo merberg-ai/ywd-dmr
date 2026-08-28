@@ -35,16 +35,19 @@ The first on-air milestone is successful when a user can install YWD-DMR, finish
 - [x] Pi validation of live-test authorization, failure classification, and non-persistence
 - [x] Real BrandMeister device-ID login accepted
 - [x] Real BrandMeister Hotspot Security authentication accepted
-- [x] Zero-frequency RPTC rejection isolated to configuration stage
 - [x] Explicit Homebrew registration-frequency metadata added and Pi retested
-- [x] Valid 446.525 MHz registration-frequency RPTC still classified as `config`
-- [ ] Isolate remaining RPTC rejection: device-ID/session conflict vs package/software metadata
-- [ ] Complete real BrandMeister RPTC acceptance / `ok` result
-- [ ] Known-good schema migration for tested network configuration
-- [ ] Protected network commit endpoint
+- [x] Fresh ESSID/device-ID conflict hypothesis isolated
+- [x] `MMDVM_DMO` package/profile compatibility isolated
+- [x] Real BrandMeister RPTC acceptance / `ok` result
+- [x] YWD-DMR-owned numeric/date-style Homebrew software identifier accepted
+- [x] Explicit schema-2 design for tested network configuration implemented on `dev`
+- [x] Revision-bound restricted Hotspot Security secret storage implemented on `dev`
+- [x] Protected one-request network test-and-commit endpoint implemented on `dev`
+- [ ] Pi 5 installed validation of schema-2 test-and-commit
+- [ ] Pi 5 restart/rotation/recovery validation with matching network secrets
 - [ ] BrandMeister long-lived backend
-- [ ] DMR ID / ESSID / master configuration integration
 - [ ] Connection/reconnect state machine
+- [ ] DMR ID / ESSID / master configuration integration into long-lived runtime
 - [ ] Talkgroup destination model
 - [ ] Callsign/DMR-ID resolver abstraction
 
@@ -61,6 +64,8 @@ The first on-air milestone is successful when a user can install YWD-DMR, finish
 ## Clients and safety
 
 - [x] LAN-only development Admin Test Console using the real v1 APIs
+- [x] Admin Test Console live BrandMeister test
+- [x] Admin Test Console tested network commit control on `dev`
 - [ ] Event WebSocket
 - [ ] Binary Audio Stream v1
 - [ ] Browser AudioWorklet client
@@ -93,7 +98,7 @@ The first on-air milestone is successful when a user can install YWD-DMR, finish
 
 The tested appliance foundation was promoted from `dev` to `main` through PR #2. `main` remains that known-good milestone while Alpha1 development continues on `dev`.
 
-On the Raspberry Pi 5, the complete protected setup/configuration chain has now proven:
+On the Raspberry Pi 5, the protected chain has proven:
 
 ```text
 one-time claim
@@ -102,37 +107,58 @@ one-time claim
   -> Admin authorization
   -> browser same-origin protection
   -> identity candidate validation
-  -> atomic known-good commit
+  -> atomic identity known-good commit
   -> revision rotation
   -> previous-snapshot recovery
   -> protected BrandMeister candidate validation
-  -> protected real BrandMeister test
+  -> protected real BrandMeister setup test
+  -> RPTL accepted
+  -> Hotspot Security accepted
+  -> RPTC accepted
 ```
 
-The live test is non-persisting by design. A reserved `.invalid` master produced a structured `network` result while leaving known-good revision 1 byte-for-byte unchanged and creating no rollback snapshot.
+The final accepted setup probe used a YWD-DMR-owned numeric/date-style Homebrew software/version identifier plus the `MMDVM_DMO` simplex compatibility profile. This means YWD-DMR does not need to report another project's exact version string.
 
-## Current Alpha1 focus — finish BrandMeister RPTC registration
+## Current Alpha1 focus — prove durable tested network configuration
 
-The real BrandMeister probe has reached the public master at `3103.master.brandmeister.network:62031` using the operator's actual DMR identity/ESSID.
+Protocol-field discovery is complete enough to stop changing the working setup packet.
 
-The proven wire sequence is now:
+The current implementation target is:
 
 ```text
-RPTL login                PASS
-RPTACK challenge          PASS
-RPTK Hotspot Security     PASS
-RPTACK authentication     PASS
-RPTC registration         REJECTED / reason: config
+candidate
+  -> local validation
+  -> real BrandMeister RPTL/RPTK/RPTC test
+  -> if accepted, commit that exact candidate
+  -> schema 2 known-good state
+  -> matching revision-bound secret
 ```
 
-The authentication packet was cross-checked against current G4KLX DMRGateway behavior and matches the established `SHA256(salt || password)` framing.
+Schema 1 remains frozen identity-only. Schema 2 adds only non-secret network metadata. The BrandMeister Hotspot Security password lives in a separate mode-`0600` revision-bound secret file under a mode-`0700` daemon secret directory.
 
-The original zero-frequency RPTC was rejected. YWD-DMR then added explicit `registration_frequency_hz`, placed a valid 446.525 MHz value in both Homebrew RX/TX fields for simplex/DMO registration, and changed informational power to `01`. The Pi 5 source/runtime gate passed, but the real master still returned `reason: config`.
+The new protected endpoint is:
 
-That rules out zero-frequency metadata as the sole cause. The next diagnostic work should isolate the remaining high-probability causes one at a time: a conflicting/stale Homebrew device ID/session, or BrandMeister expectations around the software/package identity fields.
+```text
+POST /api/v1/setup/network/test-and-commit
+```
 
-To reduce repetitive shell testing while this protocol work continues, the WebUI now contains a clearly marked LAN development **Admin Test Console**. It uses the real v1 claim/login/identity/network APIs, preserves the existing authentication and same-origin model, and does not add a network commit or shell/reset backdoor.
+The test and commit happen inside one request rather than issuing a reusable proof token. A normal BrandMeister failure returns `committed: false` and must leave the current revision untouched.
 
-See [LAN Admin Test Console](admin-test-console.md), [BrandMeister Live Test Notes](brandmeister-live-test-notes.md), [DMR Network Backend and BrandMeister Setup Contract](network-backend-contract.md), and [Control API v1](../protocols/control-api-v1.md).
+The LAN Admin Test Console now exposes **Test & Commit Network** for this exact gate. After a successful durable commit the setup summary becomes `network_complete`, but the Network status is only **CONFIGURED** until the future long-lived BrandMeister backend is actually connected.
 
-The current LAN test dashboard remains development-only. Do not router-forward or publicly expose it. HTTPS/WSS trusted-proxy deployment, Secure-cookie deployment, persistent multi-user/device credentials, radio controls, and PTT safety remain later work.
+The next Pi 5 test must prove:
+
+1. source tests/build/install pass;
+2. existing identity survives upgrade;
+3. a failed test-and-commit changes nothing;
+4. a successful test-and-commit creates schema 2 and a restricted secret file;
+5. API/UI never expose the password;
+6. restart loads schema 2 and reports `network_complete`;
+7. a second successful commit rotates current -> previous with matching secret revisions;
+8. deliberate current corruption recovers the previous schema-2 revision and its matching credential.
+
+Only after that gate passes should development move into the **long-lived BrandMeister connection/reconnect state machine**.
+
+See [LAN Admin Test Console](admin-test-console.md), [BrandMeister Live Test Notes](brandmeister-live-test-notes.md), [Known-good Configuration Store](configuration-store.md), [DMR Network Backend and BrandMeister Setup Contract](network-backend-contract.md), and [Control API v1](../protocols/control-api-v1.md).
+
+The current LAN dashboard remains development-only. Do not router-forward or publicly expose it. HTTPS/WSS trusted-proxy deployment, Secure-cookie deployment, persistent multi-user/device credentials, and PTT safety remain later work.
