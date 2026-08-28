@@ -95,11 +95,19 @@ func (s *FileStore) Load() (LoadResult, error) {
 		return previous, nil
 	}
 
-	if errors.Is(currentErr, os.ErrNotExist) && errors.Is(previousErr, os.ErrNotExist) {
+	// A schema-2 snapshot whose secret is missing also wraps os.ErrNotExist, but
+	// that is a configuration error, not an empty appliance. Report "missing"
+	// only when the snapshot files themselves truly do not exist.
+	if fileMissing(s.currentPath()) && fileMissing(s.previousPath()) {
 		return LoadResult{}, ErrNoKnownGoodConfig
 	}
 
 	return LoadResult{}, fmt.Errorf("no readable known-good configuration: current: %v; previous: %v", currentErr, previousErr)
+}
+
+func fileMissing(path string) bool {
+	_, err := os.Stat(path)
+	return errors.Is(err, os.ErrNotExist)
 }
 
 // Commit is retained as the protected identity-commit entrypoint. Once schema 2
