@@ -14,20 +14,156 @@
       <img class="brand-icon" src="/assets/brand/logo-small.webp" alt="">
       <div><span class="mark">YWD</span><strong>-DMR</strong></div>
     </div>
-    <span id="health" class="pill">CHECKING</span>
+    <div class="topbar-state">
+      <span id="session-pill" class="pill subdued">SIGNED OUT</span>
+      <span id="health" class="pill">CHECKING</span>
+    </div>
   </header>
+
   <main>
     <section class="hero">
       <img class="hero-banner" src="/assets/brand/banner.webp" alt="YWD-DMR Digital Mobile Radio">
       <p class="eyebrow">RADIO-LESS DMR APPLIANCE</p>
       <p class="hero-copy">A lightweight, API-first DMR system for Raspberry Pi and Linux. This development dashboard is the first client for the future YWD-DMR core.</p>
     </section>
+
     <section class="grid">
       <article class="card"><h2>Core</h2><div class="value" id="core-state">—</div><p id="version">Loading…</p></article>
-      <article class="card"><h2>Network</h2><div class="value" id="network-state">—</div><p>BrandMeister backend comes next.</p></article>
+      <article class="card"><h2>Network</h2><div class="value" id="network-state">—</div><p>BrandMeister setup is under active test.</p></article>
       <article class="card"><h2>Vocoder</h2><div class="value" id="vocoder-state">—</div><p>No-vocoder mode is valid by design.</p></article>
-      <article class="card"><h2>TX / RX</h2><div class="value muted-value">DISABLED</div><p>PTT stays disabled until authentication and TX leases exist.</p></article>
+      <article class="card"><h2>TX / RX</h2><div class="value muted-value">DISABLED</div><p>PTT stays disabled until TX leases and the audio runtime exist.</p></article>
     </section>
+
+    <section class="card test-console" id="test-console">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow left">LAN DEVELOPMENT TOOL</p>
+          <h1>Admin Test Console</h1>
+          <p>Run the current setup and BrandMeister tests from the browser instead of pasting long curl blocks. This console uses the same protected v1 APIs as every other client.</p>
+        </div>
+        <button class="button secondary" id="refresh-all" type="button">Refresh</button>
+      </div>
+
+      <div class="warning-banner">
+        <strong>LAN test build only.</strong>
+        Do not router-forward this service or expose it directly to the public internet. Password fields are sent only to the local YWD-DMR API and are never written into this page's result log.
+      </div>
+
+      <div class="console-status-grid">
+        <div class="status-box"><span>Setup stage</span><strong id="setup-stage">—</strong></div>
+        <div class="status-box"><span>Next step</span><strong id="setup-next">—</strong></div>
+        <div class="status-box"><span>Config state</span><strong id="config-state">—</strong></div>
+        <div class="status-box"><span>Revision</span><strong id="config-revision">—</strong></div>
+      </div>
+
+      <div class="console-grid">
+        <article class="console-panel">
+          <div class="panel-head">
+            <div>
+              <h2>1 · Admin Access</h2>
+              <p>Claim a fresh install or sign in to an existing one.</p>
+            </div>
+          </div>
+
+          <form id="claim-form" class="form-stack">
+            <h3>Claim fresh appliance</h3>
+            <label>One-time claim code
+              <input id="claim-code" name="claim_code" autocomplete="off" spellcheck="false" placeholder="sudo ywd-dmr claim-code">
+            </label>
+            <label>Admin username
+              <input id="claim-username" name="username" autocomplete="username" value="testadmin">
+            </label>
+            <label>Admin password
+              <input id="claim-password" name="password" type="password" autocomplete="new-password">
+            </label>
+            <button class="button" type="submit">Claim & Sign In</button>
+          </form>
+
+          <div class="divider"><span>or</span></div>
+
+          <form id="login-form" class="form-stack">
+            <h3>Admin login</h3>
+            <label>Username
+              <input id="login-username" name="username" autocomplete="username" value="testadmin">
+            </label>
+            <label>Password
+              <input id="login-password" name="password" type="password" autocomplete="current-password">
+            </label>
+            <div class="button-row">
+              <button class="button" type="submit">Sign In</button>
+              <button class="button secondary" id="logout-button" type="button">Sign Out</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="console-panel">
+          <div class="panel-head">
+            <div>
+              <h2>2 · Station Identity</h2>
+              <p>Commit the identity used by the live network test.</p>
+            </div>
+          </div>
+
+          <form id="identity-form" class="form-stack">
+            <label>Callsign
+              <input id="identity-callsign" name="callsign" autocomplete="off" spellcheck="false" placeholder="N0CALL">
+            </label>
+            <label>Base DMR ID
+              <input id="identity-dmr-id" name="dmr_id" type="number" inputmode="numeric" min="1" max="9999999" placeholder="1234567">
+            </label>
+            <label>ESSID
+              <input id="identity-essid" name="essid" type="number" inputmode="numeric" min="0" max="99" value="0">
+            </label>
+            <button class="button" type="submit">Commit Identity</button>
+          </form>
+        </article>
+
+        <article class="console-panel wide-panel">
+          <div class="panel-head">
+            <div>
+              <h2>3 · BrandMeister Candidate</h2>
+              <p>Validate locally or run the real short-lived Homebrew login/auth/config probe. Nothing here commits network settings.</p>
+            </div>
+          </div>
+
+          <form id="network-form" class="form-stack network-form">
+            <div class="field-grid">
+              <label>Master hostname / IP
+                <input id="network-master" name="master_address" autocomplete="off" spellcheck="false" value="3103.master.brandmeister.network">
+              </label>
+              <label>UDP port
+                <input id="network-port" name="master_port" type="number" inputmode="numeric" min="0" max="65535" value="62031">
+              </label>
+              <label>Registration frequency (Hz)
+                <input id="network-frequency" name="registration_frequency_hz" type="number" inputmode="numeric" min="100000000" max="999999999" value="446525000">
+                <small>Homebrew registration metadata only. YWD-DMR does not key RF.</small>
+              </label>
+              <label>Hotspot Security password
+                <input id="network-password" name="password" type="password" autocomplete="off">
+                <small>BrandMeister Hotspot Security, not the SelfCare login password.</small>
+              </label>
+            </div>
+            <div class="button-row">
+              <button class="button secondary" id="network-validate" type="button">Validate Candidate</button>
+              <button class="button danger-outline" id="network-test" type="button">Run Live BM Test</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="console-panel wide-panel result-panel">
+          <div class="panel-head">
+            <div>
+              <h2>Result</h2>
+              <p>The latest API response appears here. Password values are redacted before display as a second line of defense.</p>
+            </div>
+            <button class="button secondary compact" id="clear-result" type="button">Clear</button>
+          </div>
+          <div id="operation-state" class="operation-state">Ready.</div>
+          <pre id="test-result" class="result-log">No test has run yet.</pre>
+        </article>
+      </div>
+    </section>
+
     <section class="card help">
       <div class="help-head">
         <img src="/assets/brand/logo.webp" class="help-logo" alt="">
@@ -39,6 +175,7 @@
       </div>
     </section>
   </main>
+
   <script src="/app.js"></script>
 </body>
 </html>
