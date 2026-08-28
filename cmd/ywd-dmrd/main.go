@@ -45,7 +45,7 @@ func main() {
 
 	store := config.NewFileStore(stateDir)
 	if loaded, err := store.Load(); err == nil {
-		state.SetKnownGoodConfiguration(loaded.Config.Revision, loaded.RecoveredFromPrevious)
+		state.SetKnownGoodConfigurationDetails(loaded.Config.Revision, loaded.RecoveredFromPrevious, loaded.Config.Network != nil)
 		if loaded.RecoveredFromPrevious {
 			log.Printf("WARNING: known-good configuration recovered from previous snapshot (revision %d)", loaded.Config.Revision)
 		}
