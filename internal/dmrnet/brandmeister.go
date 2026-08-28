@@ -19,6 +19,8 @@ const (
 	brandMeisterConfigPacketLength = 302
 	defaultStageTimeout            = 1500 * time.Millisecond
 	defaultStageAttempts           = 1
+	brandMeisterSoftwareID         = "YWD-DMR"
+	brandMeisterPackageID          = "MMDVM_DMO"
 )
 
 var (
@@ -239,8 +241,13 @@ func buildBrandMeisterConfigPacket(identity config.RadioIdentity, deviceID uint3
 	putFixed(packet, 78, 19, "Software DMR client")
 	putFixed(packet, 97, 1, "4")
 	putFixed(packet, 98, 124, "https://github.com/merberg-ai/ywd-dmr")
-	putFixed(packet, 222, 40, "YWD-DMR")
-	putFixed(packet, 262, 40, "YWD-DMR")
+	putFixed(packet, 222, 40, brandMeisterSoftwareID)
+	// BrandMeister's Homebrew ecosystem expects an MMDVM-family package/profile
+	// string in this field. MMDVMHost uses MMDVM_DMO for a generic simplex MMDVM
+	// connection with slot marker 4. YWD-DMR keeps its own software ID above and
+	// uses this value strictly as the protocol compatibility profile; it does not
+	// claim that the daemon owns or keys an attached MMDVM modem.
+	putFixed(packet, 262, 40, brandMeisterPackageID)
 
 	return packet, nil
 }
