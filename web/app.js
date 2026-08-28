@@ -19,6 +19,7 @@ const ui = {
   refreshButton: document.querySelector('#refresh-all'),
   validateButton: document.querySelector('#network-validate'),
   testButton: document.querySelector('#network-test'),
+  commitButton: document.querySelector('#network-commit'),
   clearResult: document.querySelector('#clear-result')
 };
 
@@ -75,6 +76,14 @@ function redact(value) {
   return clean;
 }
 
+function responseSucceeded(result) {
+  if (!result.ok) return false;
+  const body = result.body;
+  if (!body || typeof body !== 'object') return true;
+  if (body.ok === false || body.valid === false || body.committed === false) return false;
+  return true;
+}
+
 function showResult(label, result) {
   const payload = {
     operation: label,
@@ -82,7 +91,11 @@ function showResult(label, result) {
     response: redact(result.body)
   };
   ui.result.textContent = JSON.stringify(payload, null, 2);
-  setOperation(result.ok ? `${label}: HTTP ${result.status}` : `${label} failed: HTTP ${result.status}`, result.ok ? 'ok' : 'error');
+  const succeeded = responseSucceeded(result);
+  setOperation(
+    succeeded ? `${label}: success` : `${label}: did not complete successfully`,
+    succeeded ? 'ok' : 'error'
+  );
 }
 
 function showClientError(label, error) {
@@ -147,9 +160,14 @@ async function loadDashboard() {
     setupStatus = setupResult.body || {};
     sessionStatus = sessionResult.body || { authenticated: false };
 
+    const networkConfigured = Boolean(
+      setupStatus.configuration && setupStatus.configuration.network_configured
+    );
+    const networkConnected = Boolean(status.network && status.network.connected);
+
     ui.health.textContent = health.ok ? 'CORE ONLINE' : 'ERROR';
     ui.coreState.textContent = String(status.state || 'unknown').toUpperCase();
-    ui.networkState.textContent = status.network && status.network.connected ? 'CONNECTED' : 'OFFLINE';
+    ui.networkState.textContent = networkConnected ? 'CONNECTED' : (networkConfigured ? 'CONFIGURED' : 'OFFLINE');
     ui.vocoderState.textContent = status.vocoder && status.vocoder.available ? 'READY' : 'NONE';
     ui.version.textContent = `${system.version || 'unknown'} · ${system.goarch || '?'} / ${system.goos || '?'}`;
 
@@ -269,11 +287,12 @@ ui.testButton.addEventListener('click', async () => {
   if (!confirmed) return;
 
   const password = document.querySelector('#network-password');
+  const candidate = networkCandidate();
   setOperation('Running live BrandMeister handshake…', 'running');
   try {
     const result = await api('/api/v1/setup/network/test', {
       method: 'POST',
-      body: JSON.stringify(networkCandidate())
+      body: JSON.stringify(candidate)
     });
     password.value = '';
     showResult('Live BrandMeister test', result);
@@ -281,6 +300,27 @@ ui.testButton.addEventListener('click', async () => {
   } catch (error) {
     password.value = '';
     showClientError('Live BrandMeister test', error);
+  }
+});
+
+ui.commitButton.addEventListener('click', async () => {
+  const confirmed = window.confirm('Test and COMMIT this BrandMeister candidate? YWD-DMR will run a fresh real login/auth/config handshake. Only if BrandMeister accepts that exact candidate will the daemon create a new known-good revision and store the Hotspot Security password in its restricted local secret store.');
+  if (!confirmed) return;
+
+  const password = document.querySelector('#network-password');
+  const candidate = networkCandidate();
+  setOperation('Testing and committing BrandMeister configuration…', 'running');
+  try {
+    const result = await api('/api/v1/setup/network/test-and-commit', {
+      method: 'POST',
+      body: JSON.stringify(candidate)
+    });
+    password.value = '';
+    showResult('Test & commit BrandMeister network', result);
+    await loadDashboard();
+  } catch (error) {
+    password.value = '';
+    showClientError('Test & commit BrandMeister network', error);
   }
 });
 
