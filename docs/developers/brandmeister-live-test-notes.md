@@ -174,6 +174,74 @@ The test used registration frequency:
 
 This eliminates the original all-zero RX/TX frequency fields as the sole cause of the configuration rejection.
 
+## Fourth real BrandMeister contact — fresh ESSID also rejected at config
+
+After the LAN Admin Test Console was added, the operator committed:
+
+```text
+KJ6YWD / 3196104 / ESSID 03
+```
+
+which derives Homebrew device ID:
+
+```text
+319610403
+```
+
+The identity commit succeeded as revision 2.
+
+A local candidate-validation attempt also demonstrated an input-unit mistake clearly in the UI:
+
+```text
+registration_frequency_hz = 14742000
+```
+
+That value is 14.742 MHz, not 147.420 MHz, so local validation correctly rejected it. The same validation response also reported `password_set: false` because the Hotspot Security field was empty for that particular validation attempt. The correct 147.420 MHz value in this API is:
+
+```text
+147420000
+```
+
+A separate live BrandMeister test then completed authentication and again returned:
+
+```json
+{
+  "ok": false,
+  "backend": "brandmeister",
+  "reason": "config",
+  "message": "BrandMeister rejected the Homebrew registration metadata after successful authentication.",
+  "duration_ms": 507
+}
+```
+
+Because `/api/v1/setup/network/test` performs local candidate validation before opening the UDP probe, reaching `reason: config` proves that the live request used a locally valid candidate and valid Hotspot Security credential.
+
+This fresh ESSID result makes an already-connected `319610402` session an unlikely explanation for the persistent RPTC rejection. Both `319610402` and `319610403` have now reached successful Homebrew authentication and then failed at the same configuration stage.
+
+## Second configuration hypothesis — package/profile identifier
+
+Current simplex MMDVM/Homebrew code uses slot marker `4` and an MMDVM-family package/profile identifier. For a generic simplex MMDVM path, current MMDVM-derived code uses:
+
+```text
+MMDVM_DMO
+```
+
+YWD-DMR had been sending:
+
+```text
+software ID: YWD-DMR
+package ID:  YWD-DMR
+```
+
+The next focused compatibility build keeps YWD-DMR's own software identity in the software field but changes only the final package/profile field to:
+
+```text
+software ID: YWD-DMR
+package ID:  MMDVM_DMO
+```
+
+This is an interoperability profile, not a claim that `ywd-dmrd` owns, controls, or keys an attached MMDVM modem. The daemon remains radio-less and the live setup tester still sends no `DMRD` voice/data.
+
 At this point the tested chain is:
 
 ```text
@@ -185,14 +253,13 @@ RPTK authentication             PASS
 RPTC packet length/layout       MATCHES G4KLX 302-BYTE FORMAT
 RPTC with zero frequency        REJECTED
 RPTC with 446525000 Hz RX/TX    REJECTED
+RPTC on fresh ESSID 03          REJECTED
+ESSID conflict hypothesis       UNLIKELY
+MMDVM_DMO package-profile test  NEXT
 network-test non-persistence    PASS
 DMR voice/data transmission     NOT ATTEMPTED
 network persistence             NOT ATTEMPTED
 ```
-
-Current G4KLX DMRGateway notes that a config-stage `MSTNAK` can represent a rejected declared configuration and gives an already-connected device ID as one example. BrandMeister also exposes Device Logs for authentication, verification, and wrong-configuration events. Therefore the next diagnostic should distinguish an ESSID/device-ID conflict from an RPTC identification-field compatibility problem before changing more registration fields.
-
-A standard simplex MMDVM client normally identifies the final package/hardware field with an MMDVM-family value such as `MMDVM_DMO`; YWD-DMR currently reports `YWD-DMR`. That is the next RPTC field to investigate only after a fresh temporary ESSID rules out an ID conflict.
 
 ## Safety result
 
