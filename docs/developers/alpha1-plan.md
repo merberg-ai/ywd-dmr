@@ -36,7 +36,9 @@ The first on-air milestone is successful when a user can install YWD-DMR, finish
 - [x] Real BrandMeister device-ID login accepted
 - [x] Real BrandMeister Hotspot Security authentication accepted
 - [x] Zero-frequency RPTC rejection isolated to configuration stage
-- [x] Explicit Homebrew registration-frequency metadata added for focused retest
+- [x] Explicit Homebrew registration-frequency metadata added and Pi retested
+- [x] Valid 446.525 MHz registration-frequency RPTC still classified as `config`
+- [ ] Isolate remaining RPTC rejection: device-ID/session conflict vs package/software metadata
 - [ ] Complete real BrandMeister RPTC acceptance / `ok` result
 - [ ] Known-good schema migration for tested network configuration
 - [ ] Protected network commit endpoint
@@ -58,6 +60,7 @@ The first on-air milestone is successful when a user can install YWD-DMR, finish
 
 ## Clients and safety
 
+- [x] LAN-only development Admin Test Console using the real v1 APIs
 - [ ] Event WebSocket
 - [ ] Binary Audio Stream v1
 - [ ] Browser AudioWorklet client
@@ -110,36 +113,26 @@ The live test is non-persisting by design. A reserved `.invalid` master produced
 
 ## Current Alpha1 focus — finish BrandMeister RPTC registration
 
-The real BrandMeister probe has now reached the public master at `3103.master.brandmeister.network:62031` using the operator's actual DMR identity/ESSID.
+The real BrandMeister probe has reached the public master at `3103.master.brandmeister.network:62031` using the operator's actual DMR identity/ESSID.
 
-The first credential attempt correctly produced `reason: auth`. After the operator supplied the verified Hotspot Security password, the next result was:
-
-```text
-reason: config
-```
-
-That proves:
+The proven wire sequence is now:
 
 ```text
 RPTL login                PASS
 RPTACK challenge          PASS
 RPTK Hotspot Security     PASS
 RPTACK authentication     PASS
-RPTC zero-RF registration REJECTED
+RPTC registration         REJECTED / reason: config
 ```
 
-The auth packet was also cross-checked against current G4KLX DMRGateway behavior and matches the established `SHA256(salt || password)` framing.
+The authentication packet was cross-checked against current G4KLX DMRGateway behavior and matches the established `SHA256(salt || password)` framing.
 
-BrandMeister hotspot guidance expects real frequency metadata in Homebrew registration. YWD-DMR therefore no longer reports zero RX/TX frequency. The network candidate now includes:
+The original zero-frequency RPTC was rejected. YWD-DMR then added explicit `registration_frequency_hz`, placed a valid 446.525 MHz value in both Homebrew RX/TX fields for simplex/DMO registration, and changed informational power to `01`. The Pi 5 source/runtime gate passed, but the real master still returned `reason: config`.
 
-```text
-registration_frequency_hz
-```
+That rules out zero-frequency metadata as the sole cause. The next diagnostic work should isolate the remaining high-probability causes one at a time: a conflicting/stale Homebrew device ID/session, or BrandMeister expectations around the software/package identity fields.
 
-The tester places that operator-supplied value in both RX and TX RPTC fields for simplex/DMO registration and uses informational power `01`. This remains registration metadata only; YWD-DMR still has no RF transmit path.
+To reduce repetitive shell testing while this protocol work continues, the WebUI now contains a clearly marked LAN development **Admin Test Console**. It uses the real v1 claim/login/identity/network APIs, preserves the existing authentication and same-origin model, and does not add a network commit or shell/reset backdoor.
 
-The next gate is a focused Pi source/build/install test of this RPTC change followed by one real BrandMeister retry. If it returns `ok`, network schema/migration and protected commit work can begin. If it remains `config`, the remaining RPTC fields will be narrowed without weakening the non-persistence or no-RF rules.
-
-See [BrandMeister Live Test Notes](brandmeister-live-test-notes.md), [DMR Network Backend and BrandMeister Setup Contract](network-backend-contract.md), and [Control API v1](../protocols/control-api-v1.md).
+See [LAN Admin Test Console](admin-test-console.md), [BrandMeister Live Test Notes](brandmeister-live-test-notes.md), [DMR Network Backend and BrandMeister Setup Contract](network-backend-contract.md), and [Control API v1](../protocols/control-api-v1.md).
 
 The current LAN test dashboard remains development-only. Do not router-forward or publicly expose it. HTTPS/WSS trusted-proxy deployment, Secure-cookie deployment, persistent multi-user/device credentials, radio controls, and PTT safety remain later work.
