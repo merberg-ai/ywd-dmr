@@ -19,12 +19,13 @@ const (
 	brandMeisterConfigPacketLength = 302
 	defaultStageTimeout            = 1500 * time.Millisecond
 	defaultStageAttempts           = 1
-	// The temporary BrandMeister tester currently uses the upstream MMDVM-Host
-	// 20260528 software/version identifier as a narrowly scoped interoperability
-	// probe. Previous real-master tests proved authentication but received an
-	// MSTNAK for RPTC with YWD-DMR in this field. This is test-probe behavior only;
-	// it is not the identity contract for the future long-lived YWD-DMR backend.
-	brandMeisterSoftwareID = "20260528"
+	// BrandMeister accepted the temporary setup probe when this field used the
+	// upstream MMDVM-Host date-style version 20260528, after rejecting YWD-DMR.
+	// This follow-up probe uses a YWD-DMR-owned date-style identifier to test
+	// whether the master requires the numeric/date format rather than that exact
+	// upstream version. It remains Homebrew registration metadata, not a claim
+	// that ywd-dmrd is MMDVMHost or controls an attached modem.
+	brandMeisterSoftwareID = "20260827"
 	brandMeisterPackageID  = "MMDVM_DMO"
 )
 
