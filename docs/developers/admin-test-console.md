@@ -92,13 +92,22 @@ Hotspot Security password
 
 The registration frequency is Homebrew registration metadata. Entering a value does **not** enable an RF transmitter or cause YWD-DMR to key an attached MMDVM modem.
 
+The field expects **Hz**, not MHz. Examples:
+
+```text
+147.420 MHz -> 147420000 Hz
+446.525 MHz -> 446525000 Hz
+```
+
+A value such as `14742000` means 14.742 MHz and is rejected by the current BrandMeister candidate validator because it is outside YWD-DMR's supported Homebrew registration range.
+
 **Validate Candidate** calls:
 
 ```text
 POST /api/v1/setup/network/validate
 ```
 
-This performs local normalization/validation only.
+This performs local normalization/validation only. A missing Hotspot Security password is also reported as a validation error; the password is not remembered from a previous operation.
 
 **Run Live BM Test** calls:
 
