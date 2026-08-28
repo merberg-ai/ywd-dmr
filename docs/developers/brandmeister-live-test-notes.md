@@ -120,13 +120,6 @@ RPTC configuration         REJECTED
 
 The Hotspot Security authentication path is therefore real-network proven.
 
-The retry again proved that the live test is non-persisting:
-
-- known-good revision 1 remained byte-for-byte unchanged;
-- no previous/rollback snapshot was created;
-- cleanup restored fresh unclaimed/missing-config state;
-- final daemon health passed.
-
 ## First configuration hypothesis — zero frequency
 
 YWD-DMR's original test `RPTC` packet was structurally correct and 302 bytes long, but deliberately reported:
@@ -171,7 +164,7 @@ A local validation attempt also caught a units typo: `14742000` is 14.742 MHz, n
 
 A separate live BrandMeister test with a locally valid candidate and the verified Hotspot Security credential again returned `reason: config`. This makes an already-connected `319610402` session an unlikely explanation: both `319610402` and `319610403` authenticated and then failed at the same RPTC stage.
 
-## Second configuration hypothesis — package/profile identifier
+## Package/profile identifier probe
 
 The next compatibility build changed only the final Homebrew package/profile field:
 
@@ -192,17 +185,17 @@ package ID:  MMDVM_DMO
 }
 ```
 
-Therefore the package/profile identifier alone is not the cause.
+Therefore the package/profile identifier alone was not the cause.
 
-## Third configuration hypothesis — software/version identifier
+## Upstream numeric software/version identifier probe
 
-Current upstream MMDVM-Host uses a date-style version string in the 40-byte software/version field. At the time of this probe the upstream `Version.h` value is:
+Current upstream MMDVM-Host uses a date-style version string in the 40-byte software/version field. At the time of this probe the upstream value was:
 
 ```text
 20260528
 ```
 
-The focused probe changed only this identification field while keeping the accepted-looking simplex package/profile:
+The focused probe changed only this identification field while keeping `MMDVM_DMO` as the package/profile:
 
 ```text
 software ID: 20260528
@@ -221,62 +214,92 @@ The real BrandMeister result was:
 }
 ```
 
-This is the first real-master end-to-end setup success for YWD-DMR. It proves:
+This was the first real-master end-to-end setup success for YWD-DMR.
+
+## YWD-DMR-owned numeric software/version identifier — accepted
+
+The final isolation probe deliberately stopped using the exact upstream MMDVM-Host version and changed only the software/version field to a YWD-DMR-owned date-style identifier:
 
 ```text
-RPTL login/auth identity         PASS
-RPTACK challenge/salt            PASS
-RPTK Hotspot Security            PASS
-RPTACK authentication            PASS
-RPTC registration/configuration  PASS
-RPTCL close                      SENT
-```
-
-No `DMRD` voice/data was transmitted, and network settings were still not persisted.
-
-The result strongly indicates that BrandMeister validates or otherwise depends on the software/version field format/content. It does not yet prove that the exact upstream value `20260528` is required.
-
-## Fourth configuration hypothesis — YWD-DMR-owned numeric software ID
-
-To avoid adopting another project's exact version string as YWD-DMR's permanent identity, the next one-variable probe keeps every other accepted field unchanged and changes only:
-
-```text
-software ID: 20260528 -> 20260827
+software ID: 20260827
 package ID:  MMDVM_DMO
 ```
 
-`20260827` is a YWD-DMR-owned date-style compatibility identifier for this experiment. If BrandMeister accepts it, the evidence will support a numeric/date-style format requirement rather than an exact MMDVMHost-version allowlist. If it is rejected, the long-lived backend needs an explicit compatibility policy before network persistence is enabled.
-
-Current chain:
+Everything else remained unchanged, including:
 
 ```text
-DNS/UDP path                         PASS
-RPTL device-ID login                 PASS
-RPTACK salt receipt                  PASS
-RPTK wire construction               CROSS-CHECKED
-RPTK authentication                  PASS
-RPTC packet length/layout            MATCHES 302-BYTE HOMEBREW FORMAT
-RPTC with zero frequency             REJECTED
-RPTC with 446525000 Hz RX/TX         REJECTED
-RPTC on fresh ESSID 03               REJECTED
-ESSID conflict hypothesis            UNLIKELY
-MMDVM_DMO package-profile alone      REJECTED
-MMDVM 20260528 software-ID profile   ACCEPTED
-full temporary setup handshake       PASS
-YWD numeric software-ID probe        NEXT
-network-test non-persistence         PASS
-DMR voice/data transmission          NOT ATTEMPTED
-network persistence                  NOT ATTEMPTED
+station:    KJ6YWD / 3196104 / ESSID 03
+master:     3103.master.brandmeister.network
+port:       62031
+frequency:  446525000 Hz RX/TX registration metadata
+power:      01
+color code: 01
+slots/mode: 4
 ```
+
+BrandMeister accepted the complete temporary setup handshake:
+
+```json
+{
+  "ok": true,
+  "backend": "brandmeister",
+  "reason": "ok",
+  "message": "BrandMeister accepted login, hotspot authentication, and software-endpoint configuration.",
+  "duration_ms": 294
+}
+```
+
+This is the decisive compatibility result. YWD-DMR does **not** need to claim an exact MMDVMHost release version. The real master accepts a YWD-DMR-owned numeric/date-style value in the Homebrew software/version field when the remaining simplex compatibility metadata is valid.
+
+The proven temporary setup chain is now:
+
+```text
+DNS/UDP path                       PASS
+RPTL device-ID login               PASS
+RPTACK challenge/salt              PASS
+RPTK Hotspot Security              PASS
+RPTACK authentication              PASS
+RPTC 302-byte registration         PASS
+YWD-owned numeric software ID      PASS
+MMDVM_DMO compatibility profile    PASS as part of accepted packet
+RPTCL close                        SENT
+network-test non-persistence       PASS
+DMR voice/data transmission        NOT ATTEMPTED
+network persistence                NOT ATTEMPTED
+```
+
+The earlier failures isolate the important compatibility behavior:
+
+- arbitrary text `YWD-DMR` in the software/version field was rejected;
+- changing only the package field to `MMDVM_DMO` was not enough;
+- a numeric/date-style software/version field was accepted;
+- a YWD-DMR-owned numeric/date-style value was accepted.
+
+The short-lived tester may therefore use a YWD-DMR-owned numeric compatibility identifier without impersonating another project's exact version.
+
+## Next gate — tested durable network configuration
+
+The protocol-discovery gate is complete. Further packet-field experimentation should stop unless future real-master evidence requires it.
+
+The next transaction is:
+
+```text
+candidate
+  -> local validation
+  -> real BrandMeister login/auth/config test
+  -> durable commit of that exact tested candidate
+```
+
+The preferred API shape is a single protected **test-and-commit** operation rather than a reusable browser proof token. This keeps the exact normalized candidate in daemon memory from validation through the real network test and durable commit, avoiding a time-of-check/time-of-use mismatch.
+
+The existing `/api/v1/setup/network/test` remains useful as a non-persisting diagnostic operation.
 
 ## Safety result
 
-All public-network attempts remain non-persisting. They do not save the master, password, backend, registration metadata, or test result; do not advance durable network state; and do not transmit DMR voice/data.
+All public-network attempts to date were non-persisting. They did not save the master, password, backend, registration metadata, or test result; did not advance durable network state; and did not transmit DMR voice/data.
 
 The Alpha1 transaction rule remains:
 
 ```text
 candidate -> local validation -> real connectivity/authentication test -> commit
 ```
-
-The durable network commit remains closed until the compatibility identity used by the future long-lived backend is chosen and proven.
