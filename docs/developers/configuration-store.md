@@ -4,20 +4,21 @@ YWD-DMR does not treat every submitted settings form as active configuration. Th
 
 ## Where it lives
 
-The development store uses files under the daemon-owned state directory:
+The daemon-owned state directory contains:
 
 ```text
 /var/lib/ywd-dmr/known-good.json
 /var/lib/ywd-dmr/known-good.previous.json
+/var/lib/ywd-dmr/secrets/
 ```
 
-These files are different from `/etc/ywd-dmr/ywd-dmr.env`. The `/etc` file contains service/bootstrap settings such as the frontend listener. Radio/network/audio configuration belongs to daemon-managed persistent state under `/var/lib/ywd-dmr/`.
+The configuration snapshots are mode `0600`. The secret directory is mode `0700`, and revision-bound secret files inside it are mode `0600`. The state tree is owned by the non-root `ywd-dmr` service account.
 
-The configuration snapshots are written with mode `0600`. The containing state directory remains restricted to the `ywd-dmr` service account.
+These files are different from `/etc/ywd-dmr/ywd-dmr.env`, which contains service/bootstrap settings such as the frontend listener.
 
-## Current schema
+## Schema 1 is frozen as identity-only
 
-Schema 1 currently contains only normalized radio identity:
+Schema 1 remains exactly the already validated identity format:
 
 ```json
 {
@@ -31,168 +32,233 @@ Schema 1 currently contains only normalized radio identity:
 }
 ```
 
-`schema` and `revision` are daemon-owned. A setup client submits candidate values; it does not choose either field.
+A schema-1 document containing a `network` object is rejected. Network fields are **not** silently added to the old schema.
 
-BrandMeister/network configuration is **not** being silently added to schema 1. The network commit will make an explicit schema/migration decision only after the real connectivity tester is proven on the installed appliance.
+## Schema 2 adds tested non-secret network configuration
+
+After the real BrandMeister login/auth/config handshake was accepted on the Pi 5, YWD-DMR introduced schema 2:
+
+```json
+{
+  "schema": 2,
+  "revision": 2,
+  "identity": {
+    "callsign": "N0CALL",
+    "dmr_id": 1234567,
+    "essid": 3
+  },
+  "network": {
+    "backend": "brandmeister",
+    "master_address": "3103.master.brandmeister.network",
+    "master_port": 62031,
+    "registration_frequency_hz": 446525000,
+    "password_set": true
+  }
+}
+```
+
+The Hotspot Security password is intentionally **not present** in `known-good.json` or `known-good.previous.json`.
+
+Schema 2 is created only by a successful tested network commit. It is not produced by `/network/validate` or the non-persisting `/network/test` diagnostic.
+
+## Revision-bound network secrets
+
+A schema-2 revision has a matching daemon-only secret file:
+
+```text
+/var/lib/ywd-dmr/secrets/network-2.json
+```
+
+The exact filename revision must match the active known-good revision. The secret file contains a small internal envelope and the Hotspot Security password. It is never served by an API, never copied into the WebUI result panel, and never written into normal configuration JSON.
+
+Why bind the secret to the revision?
+
+Because rollback must restore a **matching pair**:
+
+```text
+configuration revision 2
+      +
+network secret revision 2
+```
+
+If current revision 3 becomes corrupt and YWD-DMR recovers previous revision 2, it also loads the revision-2 secret. It cannot accidentally combine previous network settings with a newer password.
+
+The store writes the new secret before publishing a schema-2 current snapshot. If a later configuration write fails, the new secret is only an orphan; no active snapshot points at it. Cleanup removes stale revision-bound network secret files after successful commits while preserving the current and rollback revisions.
 
 ## Commit rules
 
-A candidate follows this direction:
+Identity-only transaction:
 
 ```text
-client candidate
-      |
-      v
-server-side validation / normalization
-      |
-      +-- invalid -> reject, current known-good remains untouched
-      |
-      v
-save current as previous rollback snapshot
-      |
-      v
-atomic replace of current known-good snapshot
+candidate
+  -> normalize/validate
+  -> durable commit
 ```
 
-The file implementation writes a temporary file in the same directory, sets restrictive permissions, writes and syncs the contents, then renames it over the destination and syncs the directory.
-
-On a first commit there is no previous snapshot yet. On a later successful commit, the prior current snapshot becomes `known-good.previous.json` before the new current snapshot is installed.
-
-## Protected station-identity commit
-
-Implemented and real-machine validated:
-
-```text
-POST /api/v1/setup/identity/commit
-```
-
-This endpoint requires Admin authentication and browser same-origin protection.
-
-Identity has no external dependency to probe, so its transaction is:
-
-```text
-candidate -> normalize/validate -> durable commit
-```
-
-A successful first commit creates revision 1. Later successful commits increment the revision and rotate the old current snapshot to the previous file. Runtime setup state advances only after durable commit succeeds.
-
-Invalid candidates, missing authentication, cross-origin browser requests, malformed JSON, or durable-write failures must not replace known-good state.
-
-## Real Raspberry Pi rotation/recovery proof
-
-The installed Raspberry Pi 5 API exercise proved the actual durable sequence:
-
-```text
-revision 1 commit
-  -> current revision 1
-  -> no previous file
-
-revision 2 commit
-  -> current revision 2
-  -> previous revision 1
-
-invalid candidate
-  -> HTTP 400
-  -> current and previous SHA-256 hashes unchanged
-
-restart
-  -> current revision 2 loaded normally
-
-corrupt current revision 2 + restart
-  -> previous revision 1 recovered
-  -> setup status state=recovered
-  -> explicit journal warning
-```
-
-Both real snapshot files were mode `0600` and owned by `ywd-dmr:ywd-dmr`.
-
-See [Protected Station-Identity Commit Validation Notes](identity-commit-validation-notes.md).
-
-## Network configuration rule
-
-Network settings such as BrandMeister require a fuller transaction because syntactically valid credentials may still fail in the real world:
+Network transaction:
 
 ```text
 candidate
   -> local validation
-  -> real connectivity/authentication test
-  -> commit
+  -> REAL BrandMeister login/auth/config test
+  -> durable commit of that exact normalized candidate
 ```
 
-The protected local validator is installed-machine validated:
+A candidate that merely has valid-looking fields is not known-good.
+
+## One-request test-and-commit
+
+The protected durable network operation is:
 
 ```text
-POST /api/v1/setup/network/validate
+POST /api/v1/setup/network/test-and-commit
 ```
 
-The real non-persisting tester is now implemented on `dev`:
+YWD-DMR intentionally performs the live test and commit inside one request. The exact normalized `NetworkCandidate` remains in daemon memory from validation through BrandMeister testing and durable storage.
+
+This avoids a browser-held reusable "test passed" token and avoids this dangerous sequence:
 
 ```text
-POST /api/v1/setup/network/test
+test candidate A
+change form to candidate B
+commit B using proof from A
 ```
 
-Both routes are deliberately outside the durable commit path. `/network/test` reads the already-known-good identity, performs the bounded temporary BrandMeister/Homebrew handshake, returns only a non-secret result, and then closes the temporary network session.
+Instead:
 
-A network test — successful or failed — must not:
+```text
+candidate A
+  -> validate A
+  -> test A
+  -> if and only if A is accepted, commit A
+```
 
-- increment the known-good revision;
-- create or rotate `known-good.previous.json`;
-- add network fields to schema 1;
-- persist the BrandMeister password;
-- advance setup state.
+If BrandMeister returns `auth`, `config`, `timeout`, `network`, or another normal test failure, the response reports `committed: false` and known-good state is untouched.
 
-Only a later explicit tested **network commit** may alter durable state.
+## Rotation
 
-See [DMR Network Backend and BrandMeister Setup Contract](network-backend-contract.md) and [BrandMeister Candidate Validation Notes](network-validation-notes.md).
+On a first identity commit:
+
+```text
+current revision 1 / schema 1
+no previous snapshot
+```
+
+On the first successful network test-and-commit:
+
+```text
+current  -> revision 2 / schema 2
+previous -> revision 1 / schema 1
+secret   -> network-2.json
+```
+
+A later successful network update might produce:
+
+```text
+current  -> revision 3 / schema 2
+previous -> revision 2 / schema 2
+secrets  -> network-3.json + network-2.json
+```
+
+Only after the new secret and new current configuration are safely written does the new runtime setup state advance.
+
+## Identity changes after network setup
+
+An identity commit after schema 2 is active must not silently erase a known-good network.
+
+The store therefore preserves the existing tested network metadata and copies/rebinds its secret to the new revision while applying the new validated identity. That new revision remains schema 2.
+
+Changing identity may require the long-lived network runtime to reconnect later, but it does not reduce durable configuration back to identity-only by accident.
 
 ## Startup and recovery behavior
 
-On daemon startup, YWD-DMR loads `known-good.json`.
+On daemon startup, YWD-DMR loads `known-good.json` and validates:
 
-If current is unreadable, malformed, has an unsupported schema, or contains invalid stored identity data, the store attempts `known-good.previous.json`. Successful fallback is explicitly reported as recovered; it is never silently treated as normal operation.
+1. supported schema;
+2. non-zero revision;
+3. stored identity;
+4. schema/network relationship;
+5. non-secret network fields for schema 2;
+6. matching revision-bound network secret for schema 2;
+7. the combined stored network candidate including the real secret.
 
-If neither snapshot is usable:
+If current cannot be used, the store attempts `known-good.previous.json` and its matching secret. Successful fallback is reported as recovered.
 
-- both absent -> configuration state `missing`;
-- one or both exist but neither is usable -> configuration state `error`.
+If both snapshot files are absent, configuration state is `missing`.
 
-`GET /api/v1/setup/status` reports only coarse health, whether identity is configured, and revision. It does not return the stored identity.
+If a snapshot exists but its JSON, schema, identity, network data, or required secret is unusable and no valid rollback exists, configuration state is `error`. A missing schema-2 secret is **not** misreported as a fresh empty appliance.
 
-A recovery commit must not overwrite a valid previous snapshot with a corrupt current file.
+## Setup status
 
-## Why plain JSON first
+`GET /api/v1/setup/status` remains a coarse non-secret status endpoint.
 
-The first store uses only the Go standard library. It is small, easy to inspect/recover with normal Linux tools, cross-compiles cleanly for the Pi Zero/ARMv6 baseline, and avoids a database dependency merely to store a tiny station configuration.
+Identity-only known-good state reports:
 
-This does **not** mean YWD-DMR will never use SQLite. Event history, Last Heard, account/session state, and other relational data may justify it later. Known-good station configuration remains a separate transaction/recovery concern.
+```text
+stage: identity_complete
+next_step: network
+network_configured: false
+```
 
-## Security rule
+After durable schema-2 network commit:
 
-No BrandMeister password/token or administrator credential is persisted in this configuration document today.
+```text
+stage: network_complete
+next_step: audio
+network_configured: true
+```
 
-When network secrets are added:
+The status endpoint does not return callsign, DMR ID, master, registration frequency, or password.
 
-- configuration read/status APIs must redact them;
-- candidates may replace a secret but normal clients must not retrieve it;
-- filesystem ownership/mode remains part of the security boundary;
-- commit APIs remain protected by daemon-side authorization;
-- validation/test results and logs must never expose the submitted password.
+## Security boundary
+
+The Hotspot Security credential is sensitive but must be recoverable by the daemon across restart for the future long-lived BrandMeister backend.
+
+For Alpha1 the protection model is intentionally simple and honest:
+
+- daemon runs as dedicated non-root `ywd-dmr`;
+- secret directory mode `0700`;
+- secret files mode `0600`;
+- secret never returned by an API;
+- secret never included in validation/test/commit result bodies;
+- secret never placed in URL/query strings;
+- WebUI clears the password field after live test or test-and-commit;
+- normal known-good JSON contains only `password_set: true`;
+- systemd restricts daemon write access to its state/log paths.
+
+Encrypting a password with a key stored beside it would not meaningfully improve the appliance boundary. A future platform-backed secret facility may be added where hardware/OS support provides a real separate trust anchor.
+
+Diagnostics/support bundles must continue to exclude revision-bound secret files unless an explicit future redacted export contract says otherwise.
+
+## Existing real-machine proof
+
+Before schema 2, the Pi 5 already proved:
+
+```text
+revision 1 identity commit
+revision 2 identity commit
+invalid candidate preservation
+restart persistence
+current corruption -> previous recovery
+0600 current/previous ownership
+```
+
+The Pi 5 then proved the full non-persisting BrandMeister handshake, including acceptance of a YWD-DMR-owned numeric/date-style software identifier with the `MMDVM_DMO` compatibility profile.
+
+The next installed-machine gate is schema-2 test-and-commit, restart, rotation, and recovery validation.
 
 ## Current implementation status
 
-- [x] Schema/revision envelope.
-- [x] Identity validation/normalization before commit.
-- [x] Atomic current-snapshot writes.
-- [x] Previous rollback snapshot.
-- [x] Invalid-candidate preservation.
-- [x] Recovery load from valid previous when current is corrupt.
-- [x] Unsupported-schema rejection.
-- [x] Daemon startup missing/loaded/recovered/error state.
-- [x] Read-only setup status without stored identity disclosure.
-- [x] Admin-protected identity commit through this same store.
-- [x] Installed Pi 5 revision `1 -> 2`, invalid-candidate preservation, restart persistence, and previous-snapshot recovery.
-- [x] Installed Pi 5 proof that protected network candidate validation changes no known-good state.
-- [x] Real non-persisting BrandMeister test endpoint implemented without changing schema 1.
-- [ ] Pi proof that live BrandMeister test success/failure leaves this store unchanged.
-- [ ] Explicit schema/migration design for network configuration.
-- [ ] Protected tested network commit through this same store.
+- [x] Schema 1 frozen identity-only.
+- [x] Schema 2 non-secret network shape implemented.
+- [x] Revision-bound restricted network secret store implemented.
+- [x] Identity commit preserves an existing tested network.
+- [x] Atomic current/previous configuration rotation retained.
+- [x] Current/previous recovery validates matching network secret revision.
+- [x] Protected one-request network test-and-commit endpoint implemented on `dev`.
+- [x] WebUI control for explicit test-and-commit implemented on `dev`.
+- [x] Unit/API tests added for schema 2, secret redaction, rotation/recovery, failed-test preservation, and same-origin protection.
+- [ ] Installed Pi 5 proof of schema-2 network commit.
+- [ ] Installed Pi 5 restart/load proof with revision-bound secret.
+- [ ] Installed Pi 5 schema-2 rotation/recovery proof.
+- [ ] Long-lived BrandMeister connection/reconnect state machine.
