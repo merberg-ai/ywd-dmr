@@ -11,7 +11,11 @@ import (
 )
 
 const (
-	KnownGoodSchema      = 1
+	// Schema 1 is deliberately frozen as identity-only. Network persistence uses
+	// schema 2 rather than silently extending an already validated schema.
+	KnownGoodSchema        = 1
+	KnownGoodNetworkSchema = 2
+
 	knownGoodFilename    = "known-good.json"
 	previousGoodFilename = "known-good.previous.json"
 )
@@ -19,24 +23,31 @@ const (
 var ErrNoKnownGoodConfig = errors.New("no known-good configuration")
 
 // Candidate is untrusted configuration proposed by a setup/control client.
-// More sections will be added as network, audio, and vocoder configuration land.
+// The legacy Commit entrypoint still accepts identity only; network commit uses
+// its own tested transaction so a syntactically valid but unreachable network
+// cannot be promoted to known-good state.
 type Candidate struct {
 	Identity RadioIdentityInput `json:"identity"`
 }
 
-// KnownGoodConfig is the normalized configuration format persisted by the
-// daemon. Schema and Revision are daemon-owned metadata and are never supplied
-// by a client candidate.
+// KnownGoodConfig is the normalized non-secret configuration format persisted
+// by the daemon. Schema and Revision are daemon-owned metadata. Schema 1 is
+// identity-only; schema 2 adds the non-secret tested network shape. Network
+// credentials are stored separately and are never serialized here.
 type KnownGoodConfig struct {
-	Schema   int           `json:"schema"`
-	Revision uint64        `json:"revision"`
-	Identity RadioIdentity `json:"identity"`
+	Schema   int                  `json:"schema"`
+	Revision uint64               `json:"revision"`
+	Identity RadioIdentity        `json:"identity"`
+	Network  *StoredNetworkConfig `json:"network,omitempty"`
 }
 
 // LoadResult tells callers whether the normal current snapshot or the previous
-// rollback snapshot supplied the usable known-good configuration.
+// rollback snapshot supplied the usable known-good configuration. A network
+// password is available only to daemon internals and is explicitly excluded
+// from JSON serialization.
 type LoadResult struct {
 	Config                KnownGoodConfig
+	NetworkPassword       string `json:"-"`
 	RecoveredFromPrevious bool
 }
 
@@ -70,17 +81,18 @@ func (s *FileStore) previousPath() string {
 }
 
 // Load returns the current known-good snapshot. If the current snapshot cannot
-// be read or validated, a valid previous snapshot is returned as a recovery
-// source. The caller can then surface that degraded/recovered state explicitly.
+// be read or validated, including its revision-bound network secret when schema
+// 2 is active, a valid previous snapshot is returned as a recovery source.
 func (s *FileStore) Load() (LoadResult, error) {
-	current, currentErr := readKnownGood(s.currentPath())
+	current, currentErr := s.readSnapshot(s.currentPath())
 	if currentErr == nil {
-		return LoadResult{Config: current}, nil
+		return current, nil
 	}
 
-	previous, previousErr := readKnownGood(s.previousPath())
+	previous, previousErr := s.readSnapshot(s.previousPath())
 	if previousErr == nil {
-		return LoadResult{Config: previous, RecoveredFromPrevious: true}, nil
+		previous.RecoveredFromPrevious = true
+		return previous, nil
 	}
 
 	if errors.Is(currentErr, os.ErrNotExist) && errors.Is(previousErr, os.ErrNotExist) {
@@ -90,46 +102,11 @@ func (s *FileStore) Load() (LoadResult, error) {
 	return LoadResult{}, fmt.Errorf("no readable known-good configuration: current: %v; previous: %v", currentErr, previousErr)
 }
 
-// Commit validates and normalizes a candidate before changing durable state.
-// A successful second/subsequent commit first writes the old known-good value
-// to the rollback snapshot, then atomically replaces the current snapshot.
+// Commit is retained as the protected identity-commit entrypoint. Once schema 2
+// exists, an identity change preserves the already-tested network configuration
+// and its secret instead of accidentally dropping it.
 func (s *FileStore) Commit(candidate Candidate) (KnownGoodConfig, error) {
-	identity := ValidateRadioIdentity(candidate.Identity)
-	if !identity.Valid {
-		return KnownGoodConfig{}, &CandidateError{Errors: identity.Errors}
-	}
-
-	if err := os.MkdirAll(s.dir, 0o750); err != nil {
-		return KnownGoodConfig{}, fmt.Errorf("create configuration directory: %w", err)
-	}
-	if err := os.Chmod(s.dir, 0o750); err != nil {
-		return KnownGoodConfig{}, fmt.Errorf("set configuration directory mode: %w", err)
-	}
-
-	var revision uint64 = 1
-	if existing, err := s.Load(); err == nil {
-		revision = existing.Config.Revision + 1
-		// Do not overwrite a known-good previous snapshot with a corrupt current
-		// file during recovery. Only rotate when the current snapshot itself was
-		// the successfully loaded source.
-		if !existing.RecoveredFromPrevious {
-			if err := writeKnownGoodAtomic(s.previousPath(), existing.Config); err != nil {
-				return KnownGoodConfig{}, fmt.Errorf("write rollback configuration: %w", err)
-			}
-		}
-	} else if !errors.Is(err, ErrNoKnownGoodConfig) {
-		return KnownGoodConfig{}, err
-	}
-
-	committed := KnownGoodConfig{
-		Schema:   KnownGoodSchema,
-		Revision: revision,
-		Identity: identity.Normalized,
-	}
-	if err := writeKnownGoodAtomic(s.currentPath(), committed); err != nil {
-		return KnownGoodConfig{}, fmt.Errorf("write known-good configuration: %w", err)
-	}
-	return committed, nil
+	return s.commitIdentity(candidate.Identity)
 }
 
 func readKnownGood(path string) (KnownGoodConfig, error) {
@@ -152,12 +129,22 @@ func readKnownGood(path string) (KnownGoodConfig, error) {
 		return KnownGoodConfig{}, fmt.Errorf("decode %s: %w", filepath.Base(path), err)
 	}
 
-	if cfg.Schema != KnownGoodSchema {
+	switch cfg.Schema {
+	case KnownGoodSchema:
+		if cfg.Network != nil {
+			return KnownGoodConfig{}, errors.New("configuration schema 1 must remain identity-only")
+		}
+	case KnownGoodNetworkSchema:
+		if cfg.Network == nil {
+			return KnownGoodConfig{}, errors.New("configuration schema 2 requires network configuration")
+		}
+	default:
 		return KnownGoodConfig{}, fmt.Errorf("unsupported configuration schema %d", cfg.Schema)
 	}
 	if cfg.Revision == 0 {
 		return KnownGoodConfig{}, errors.New("configuration revision must be greater than zero")
 	}
+
 	identity := ValidateRadioIdentity(RadioIdentityInput{
 		Callsign: cfg.Identity.Callsign,
 		DMRID:    cfg.Identity.DMRID,
@@ -167,6 +154,28 @@ func readKnownGood(path string) (KnownGoodConfig, error) {
 		return KnownGoodConfig{}, errors.New("stored radio identity is invalid")
 	}
 	cfg.Identity = identity.Normalized
+
+	if cfg.Network != nil {
+		if !cfg.Network.PasswordSet {
+			return KnownGoodConfig{}, errors.New("stored network configuration is missing its secret marker")
+		}
+		candidate, validation := ValidateNetworkCandidate(NetworkInput{
+			Backend:                 cfg.Network.Backend,
+			MasterAddress:           cfg.Network.MasterAddress,
+			MasterPort:              cfg.Network.MasterPort,
+			RegistrationFrequencyHz: cfg.Network.RegistrationFrequencyHz,
+			// The real revision-bound secret is validated by readSnapshot. This
+			// placeholder lets the shared non-secret field validator normalize the
+			// stored network shape without putting a password in known-good.json.
+			Password: "stored-secret",
+		})
+		if !validation.Valid {
+			return KnownGoodConfig{}, errors.New("stored network configuration is invalid")
+		}
+		normalized := storedNetworkFromCandidate(candidate)
+		normalized.PasswordSet = true
+		cfg.Network = &normalized
+	}
 	return cfg, nil
 }
 
