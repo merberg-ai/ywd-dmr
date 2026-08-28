@@ -7,7 +7,7 @@ import (
 	"github.com/merberg-ai/ywd-dmr/internal/config"
 )
 
-func TestBrandMeisterConfigPacketUsesYWDSoftwareAndSimplexMMDVMProfile(t *testing.T) {
+func TestBrandMeisterConfigPacketUsesCurrentMMDVMProbeProfile(t *testing.T) {
 	packet, err := buildBrandMeisterConfigPacket(
 		config.RadioIdentity{Callsign: "N0CALL"},
 		1234567,
@@ -22,6 +22,9 @@ func TestBrandMeisterConfigPacketUsesYWDSoftwareAndSimplexMMDVMProfile(t *testin
 
 	if softwareID != brandMeisterSoftwareID {
 		t.Fatalf("unexpected software ID %q", softwareID)
+	}
+	if softwareID != "20260528" {
+		t.Fatalf("expected current upstream MMDVM-Host interoperability probe ID 20260528, got %q", softwareID)
 	}
 	if packageID != brandMeisterPackageID {
 		t.Fatalf("unexpected package/profile ID %q", packageID)
