@@ -10,6 +10,7 @@ type SetupConfigStatus struct {
 	State              string `json:"state"`
 	Revision           uint64 `json:"revision,omitempty"`
 	IdentityConfigured bool   `json:"identity_configured"`
+	NetworkConfigured  bool   `json:"network_configured"`
 	Recovered          bool   `json:"recovered"`
 }
 
@@ -42,6 +43,7 @@ func NewState(version, commit, branch string) *State {
 			Configuration: SetupConfigStatus{
 				State:              "missing",
 				IdentityConfigured: false,
+				NetworkConfigured:  false,
 				Recovered:          false,
 			},
 		},
@@ -89,13 +91,21 @@ func (s *State) SetClaimed(claimed bool) {
 	s.recalculateSetupStageLocked()
 }
 
+// SetKnownGoodConfiguration is retained for identity-only callers and tests.
+// New startup/network paths should use SetKnownGoodConfigurationDetails so the
+// setup state can distinguish identity-only schema 1 from network-ready schema 2.
 func (s *State) SetKnownGoodConfiguration(revision uint64, recovered bool) {
+	s.SetKnownGoodConfigurationDetails(revision, recovered, false)
+}
+
+func (s *State) SetKnownGoodConfigurationDetails(revision uint64, recovered, networkConfigured bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.setup.Configuration = SetupConfigStatus{
 		State:              map[bool]string{true: "recovered", false: "loaded"}[recovered],
 		Revision:           revision,
 		IdentityConfigured: true,
+		NetworkConfigured:  networkConfigured,
 		Recovered:          recovered,
 	}
 	s.recalculateSetupStageLocked()
@@ -107,6 +117,7 @@ func (s *State) SetConfigurationLoadError() {
 	s.setup.Configuration = SetupConfigStatus{
 		State:              "error",
 		IdentityConfigured: false,
+		NetworkConfigured:  false,
 		Recovered:          false,
 	}
 	s.recalculateSetupStageLocked()
@@ -121,6 +132,11 @@ func (s *State) recalculateSetupStageLocked() {
 	if s.setup.Configuration.State == "error" {
 		s.setup.Stage = "configuration_error"
 		s.setup.NextStep = "repair"
+		return
+	}
+	if s.setup.Configuration.IdentityConfigured && s.setup.Configuration.NetworkConfigured {
+		s.setup.Stage = "network_complete"
+		s.setup.NextStep = "audio"
 		return
 	}
 	if s.setup.Configuration.IdentityConfigured {
