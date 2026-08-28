@@ -41,13 +41,18 @@ func (s *Server) registerConfigurationRoutes() {
 		}
 
 		// Durable commit is authoritative. Only after it succeeds may the
-		// in-memory setup state advance to identity_complete/network.
-		s.state.SetKnownGoodConfiguration(committed.Revision, false)
-		writeJSON(w, http.StatusOK, map[string]any{
+		// in-memory setup state advance. If a tested schema-2 network already
+		// exists, the store preserves it across this identity revision.
+		s.state.SetKnownGoodConfigurationDetails(committed.Revision, false, committed.Network != nil)
+		response := map[string]any{
 			"committed": true,
 			"revision":  committed.Revision,
 			"identity":  committed.Identity,
-		})
+		}
+		if committed.Network != nil {
+			response["network_preserved"] = true
+		}
+		writeJSON(w, http.StatusOK, response)
 	})))
 
 	s.registerNetworkRoutes()
